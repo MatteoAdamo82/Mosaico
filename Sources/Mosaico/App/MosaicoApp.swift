@@ -25,9 +25,8 @@ struct MosaicoApp: App {
         MenuBarExtra {
             MenuContent()
         } label: {
-            // Icona fissa; ⏸ quando il tiling è in pausa
-            Image(systemName: menuState.isPaused ? "pause.rectangle" : "square.split.2x2")
-                .renderingMode(.template)
+            // Mini-mosaico aureo; attenuato quando il tiling è in pausa
+            Image(nsImage: menuState.isPaused ? MenuBarIcon.paused : MenuBarIcon.normal)
         }
         .menuBarExtraStyle(.menu)
 
