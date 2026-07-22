@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="Resources/AppIcon.svg" width="140" alt="Mosaico app icon">
+</p>
+
 # Mosaico
 
 A tiling window manager for macOS in a single app.
