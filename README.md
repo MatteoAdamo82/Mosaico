@@ -27,8 +27,9 @@ the terminal-heavy setup those tools require.
 - **Mouse support** — pointer follows focus (optional); ⌥+drag moves,
   ⌥+right-drag resizes; move a window to another space with ⇧⌥1…7
 - **Smart rules** — dialogs, sheets, picture-in-picture and non-resizable
-  windows float automatically; exclude whole apps or single windows from
-  tiling via the menubar
+  windows float automatically and stay above the tiled layout; exclude
+  whole apps or single windows from tiling via the menubar (excluded
+  windows show a checkmark and can be toggled back at any time)
 - **GUI settings** — gaps, shortcuts recorder, exclusions, launch at login;
   persisted as JSON
 
@@ -148,8 +149,11 @@ Current UI language is Italian; localization is on the roadmap.
   Open on first launch, and macOS re-asks for the Accessibility permission
   when the signing identity changes
 - Native fullscreen windows are left unmanaged until they exit fullscreen
-- Per-window exclusion rules match the exact window title, so they don't
-  stick for windows that retitle dynamically (browser windows, editors)
+- The Accessibility API cannot enumerate windows on inactive Spaces, so the
+  menubar window list populates as you visit each Space
+- Persisting a per-window exclusion across restarts matches the exact
+  window title, so it may not stick for windows that retitle dynamically
+  (within a session, exclusions are tracked by window id and always hold)
 
 ## Roadmap
 

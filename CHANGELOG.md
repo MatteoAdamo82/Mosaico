@@ -5,6 +5,47 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-07-23
+
+### Added
+
+- App icon and menubar icon: three golden-ratio tiles; the app icon is
+  generated from an editable SVG source (`Resources/AppIcon.svg`) via
+  `Scripts/make-icon.swift`
+- Per-window exclusion toggle in the menubar: the window list shows a
+  checkmark on excluded windows and clicking toggles them in and out of
+  tiling instantly; leftover title-based rules from previous sessions are
+  listed separately for cleanup
+- Floating windows (dialogs, fixed-size windows) are kept above tiled ones,
+  so they no longer disappear behind the tiling
+- Display focus/move commands work with any monitor arrangement: if no
+  display lies in the requested direction (e.g. stacked monitors), they
+  cycle through displays in spatial order
+- Local code-signing setup documented in the README
+
+### Changed
+
+- Runtime window exclusion is tracked by window id, immune to dynamic title
+  changes; title-based rules are only used to persist across restarts
+- The menubar window list is driven by observable state and stays current
+  as windows are adopted, closed, excluded or re-enabled
+- Internal cleanup: dead code from the abandoned virtual-workspace design
+  removed, drop-zone geometry and window rules extracted into pure
+  functions, resize-adoption unified into a single code path, self-tests
+  extended from 14 to 31 checks
+
+### Fixed
+
+- Windows on non-visible Spaces were wrongly pruned from the model (the
+  Accessibility API reports them as invalid while they still exist), which
+  emptied the menubar window list over time
+- Excluded windows vanished from the menubar list after switching Space;
+  they now stay listed while their app is running
+- An excluded window could be re-tiled after its title changed while still
+  showing as excluded
+- Settings decoding is now tolerant per-binding: an invalid saved shortcut
+  no longer resets the whole configuration
+
 ## [0.1.0] - 2026-07-21
 
 Initial release.
