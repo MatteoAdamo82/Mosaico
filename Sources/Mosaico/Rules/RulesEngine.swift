@@ -6,57 +6,73 @@ enum WindowDisposition {
     case ignore
 }
 
+/// Attributi di una finestra rilevanti per la disposition: valori semplici,
+/// così la decisione è una funzione pura e self-testabile.
+struct WindowTraits {
+    var role: String?
+    var subrole: String?
+    var title: String?
+    var bundleID: String?
+    var isResizable = true
+    var isMovable = true
+    var hasWindowParent = false
+    var isFullscreen = false
+    var isMinimized = false
+    var cgLayer = 0
+}
+
 /// Decide come trattare una finestra: tile, float o ignora.
-/// Port di float-system-windows.sh + esclusioni per bundle ID.
+/// Port di float-system-windows.sh + esclusioni + euristiche PiP.
 enum RulesEngine {
 
     /// Titoli delle finestre Picture-in-Picture nei vari browser/lingue.
-    private static let pipTitles: Set<String> = [
+    static let pipTitles: Set<String> = [
         "Picture in Picture", "Picture-in-Picture", "Immagine nell'immagine",
     ]
 
-    static func disposition(for window: AXWindow, bundleID: String?) -> WindowDisposition {
-        let settings = SettingsStore.shared.settings
-
+    /// Decisione pura sui soli attributi.
+    static func disposition(traits: WindowTraits,
+                            excludedBundleIDs: [String],
+                            excludedWindowRules: [WindowRule]) -> WindowDisposition {
         // App esclusa dal tiling
-        if let bundleID, settings.excludedBundleIDs.contains(bundleID) {
+        if let bundleID = traits.bundleID, excludedBundleIDs.contains(bundleID) {
             return .ignore
         }
 
         // Regola per finestra specifica (esclusa dall'utente via menu)
-        if let bundleID, let title = window.title,
-           settings.excludedWindowRules.contains(where: { $0.bundleID == bundleID && $0.title == title }) {
+        if let bundleID = traits.bundleID, let title = traits.title,
+           excludedWindowRules.contains(where: { $0.bundleID == bundleID && $0.title == title }) {
             return .ignore
         }
 
         // Finestre flottanti di sistema (PiP, palette always-on-top):
         // layer CGWindow ≠ 0 → mai tilare
-        if window.cgLayer != 0 {
+        if traits.cgLayer != 0 {
             return .ignore
         }
 
         // PiP che (in alcune app) sta a layer 0: riconoscilo dal titolo
-        if let title = window.title, pipTitles.contains(title) {
+        if let title = traits.title, pipTitles.contains(title) {
             return .ignore
         }
 
         // Sheet/dialog agganciati a un'altra finestra: mai nel tree
-        if window.hasWindowParent {
+        if traits.hasWindowParent {
             return .ignore
         }
 
         // Fullscreen nativo: escluso finché attivo
-        if window.isFullscreen {
+        if traits.isFullscreen {
             return .ignore
         }
 
-        if window.isMinimized {
+        if traits.isMinimized {
             return .ignore
         }
 
         // Port di float-system-windows.sh
-        let role = window.role ?? ""
-        let subrole = window.subrole ?? ""
+        let role = traits.role ?? ""
+        let subrole = traits.subrole ?? ""
 
         guard role == kAXWindowRole || role.isEmpty else {
             return .ignore
@@ -68,7 +84,7 @@ enum RulesEngine {
         case "AXStandardWindow":
             // Finestra a dimensione fissa o non spostabile (popup, palette,
             // finestre transitorie): float — tilarle strizza le altre per nulla
-            guard window.isResizable, window.isMovable else { return .float }
+            guard traits.isResizable, traits.isMovable else { return .float }
             return .tile
         default:
             // Subrole vuoto o sconosciuto: float se anche role è vuoto o AXSheet
@@ -77,5 +93,23 @@ enum RulesEngine {
             }
             return .ignore
         }
+    }
+
+    /// Wrapper: legge gli attributi dalla finestra reale e decide.
+    static func disposition(for window: AXWindow, bundleID: String?) -> WindowDisposition {
+        let settings = SettingsStore.shared.settings
+        let traits = WindowTraits(role: window.role,
+                                  subrole: window.subrole,
+                                  title: window.title,
+                                  bundleID: bundleID,
+                                  isResizable: window.isResizable,
+                                  isMovable: window.isMovable,
+                                  hasWindowParent: window.hasWindowParent,
+                                  isFullscreen: window.isFullscreen,
+                                  isMinimized: window.isMinimized,
+                                  cgLayer: window.cgLayer)
+        return disposition(traits: traits,
+                           excludedBundleIDs: settings.excludedBundleIDs,
+                           excludedWindowRules: settings.excludedWindowRules)
     }
 }
