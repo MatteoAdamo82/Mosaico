@@ -60,6 +60,44 @@ Scripts/make-app.sh               # produce dist/Mosaico.app and dist/Mosaico.zi
 Only the Xcode Command Line Tools are required; the project has no
 third-party dependencies.
 
+#### Code signing for local development
+
+macOS ties the Accessibility permission to the app's code signature. With
+plain ad-hoc signing (the default when no identity is available) the
+signature changes on every build, so macOS silently invalidates the
+permission and you have to re-grant it after each rebuild.
+
+To avoid that, `Scripts/make-app.sh` signs with a certificate named
+**"Mosaico Dev"** when one exists in your keychain, and only falls back to
+ad-hoc signing otherwise. Create your own self-signed certificate once:
+
+```sh
+# Generate a self-signed code-signing certificate (10 years)
+openssl req -x509 -newkey rsa:2048 -keyout mosaico-key.pem -out mosaico-cert.pem \
+  -days 3650 -nodes -subj "/CN=Mosaico Dev" \
+  -addext "keyUsage=digitalSignature" \
+  -addext "extendedKeyUsage=codeSigning" \
+  -addext "basicConstraints=CA:false"
+
+# Import the key and certificate into your login keychain
+security import mosaico-key.pem -k ~/Library/Keychains/login.keychain-db -T /usr/bin/codesign
+security import mosaico-cert.pem -k ~/Library/Keychains/login.keychain-db -T /usr/bin/codesign
+
+# Trust it for code signing (macOS will ask for your password)
+security add-trusted-cert -p codeSign -k ~/Library/Keychains/login.keychain-db mosaico-cert.pem
+```
+
+Verify with `security find-identity -p codesigning` — you should see
+`"Mosaico Dev"` listed. From then on, rebuilds keep the same signature and
+the Accessibility grant survives. On the first signed build macOS may show a
+keychain prompt for `codesign`: choose "Always Allow".
+
+Keep the generated `.pem` files out of version control (the repo's
+`.gitignore` already excludes them). Note that a self-signed certificate
+only helps on your own machine — distributing to other people still runs
+into Gatekeeper, which is what the Developer ID + notarization roadmap item
+is about.
+
 ## Default shortcuts
 
 | Shortcut | Action |
