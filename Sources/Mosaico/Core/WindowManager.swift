@@ -130,6 +130,9 @@ final class WindowManager {
     /// il layout corrente.
     private func manage(window: AXWindow, bundleID: String?) {
         guard workspaceManager.locate(window.id) == nil else { return }
+        // Esclusa a runtime: mai ri-adottare (anche se il titolo è cambiato
+        // e la regola persistente non matcha più)
+        guard runtimeExcluded[window.id] == nil else { return }
 
         // Mouse premuto = probabile drag in corso (es. tab del Finder
         // strappata in una finestra nuova): rimanda finché non rilascia.
@@ -306,10 +309,15 @@ final class WindowManager {
     }
 
     /// Rimuove le finestre il cui AXUIElement non risponde più.
+    /// SOLO sullo space visibile: le finestre degli altri spaces non sono
+    /// raggiungibili via AX e risulterebbero "invalide" pur esistendo —
+    /// verranno verificate quando l'utente visita il loro space.
     private func pruneInvalidWindows() {
         var toRemove: [WindowID] = []
-        for (_, display) in workspaceManager.displays {
-            for (_, spaceState) in display.spaces {
+        for (displayID, display) in workspaceManager.displays {
+            guard let screen = DisplayManager.screen(withDisplayID: displayID),
+                  let visibleSpace = SpaceTracker.currentSpace(for: screen) else { continue }
+            for (spaceID, spaceState) in display.spaces where spaceID == visibleSpace {
                 for (id, managed) in spaceState.workspace.windows where !managed.window.isValid {
                     toRemove.append(id)
                 }
@@ -664,9 +672,15 @@ final class WindowManager {
         let title: String
         let appName: String
         let bundleID: String?
+        let isExcluded: Bool
     }
 
-    /// Snapshot delle finestre gestite (per il menu "Escludi finestra").
+    /// Finestre escluse a runtime, per WindowID: immune ai cambi di titolo
+    /// (la regola persistente su app+titolo serve solo tra un riavvio e
+    /// l'altro). Tiene il riferimento per la riabilitazione istantanea.
+    private var runtimeExcluded: [WindowID: (managed: ManagedWindow, rule: WindowRule?)] = [:]
+
+    /// Snapshot per il menu: finestre gestite + escluse (con flag).
     func managedWindowsSnapshot() -> [WindowInfo] {
         var result: [WindowInfo] = []
         for (_, display) in workspaceManager.displays {
@@ -676,36 +690,85 @@ final class WindowManager {
                     result.append(WindowInfo(id: id,
                                              title: managed.window.title ?? "(senza titolo)",
                                              appName: app?.localizedName ?? "?",
-                                             bundleID: app?.bundleIdentifier))
+                                             bundleID: app?.bundleIdentifier,
+                                             isExcluded: false))
                 }
             }
+        }
+        for (id, entry) in runtimeExcluded where entry.managed.window.isValid {
+            let app = NSRunningApplication(processIdentifier: entry.managed.window.pid)
+            result.append(WindowInfo(id: id,
+                                     title: entry.managed.window.title ?? entry.rule?.title ?? "(senza titolo)",
+                                     appName: app?.localizedName ?? "?",
+                                     bundleID: app?.bundleIdentifier,
+                                     isExcluded: true))
         }
         return result.sorted { ($0.appName, $0.title) < ($1.appName, $1.title) }
     }
 
-    /// Esclude una finestra specifica: regola persistente (app + titolo)
-    /// e rimozione immediata dal tiling.
-    func excludeWindow(_ id: WindowID) {
-        guard let loc = workspaceManager.locate(id) else { return }
-        if let bundleID = NSRunningApplication(processIdentifier: loc.managed.window.pid)?.bundleIdentifier,
-           let title = loc.managed.window.title, !title.isEmpty {
-            var settings = SettingsStore.shared.settings
-            let rule = WindowRule(bundleID: bundleID, title: title)
-            if !settings.excludedWindowRules.contains(rule) {
-                settings.excludedWindowRules.append(rule)
-                SettingsStore.shared.settings = settings
-            }
-            MosaicoLog.log("esclusa finestra [\(id)] \(rule.bundleID) '\(rule.title)'")
-        }
-        remove(windowID: id)
+    /// Regole persistenti non coperte da un'esclusione runtime (residui di
+    /// sessioni precedenti): mostrate a parte nel menu.
+    func staleExclusionRules() -> [WindowRule] {
+        let covered = Set(runtimeExcluded.values.compactMap { $0.rule })
+        return SettingsStore.shared.settings.excludedWindowRules.filter { !covered.contains($0) }
     }
 
-    /// Riabilita una finestra esclusa: rimuove la regola e la riadotta subito.
+    func toggleExclusion(_ id: WindowID) {
+        if runtimeExcluded[id] != nil {
+            reenableWindow(id)
+        } else {
+            excludeWindow(id)
+        }
+    }
+
+    /// Esclude una finestra: fuori dal tiling subito (per ID) + regola
+    /// persistente best-effort (app + titolo attuale).
+    func excludeWindow(_ id: WindowID) {
+        guard let loc = workspaceManager.locate(id) else { return }
+        let managed = loc.managed
+
+        var rule: WindowRule?
+        if let bundleID = NSRunningApplication(processIdentifier: managed.window.pid)?.bundleIdentifier,
+           let title = managed.window.title, !title.isEmpty {
+            let newRule = WindowRule(bundleID: bundleID, title: title)
+            rule = newRule
+            var settings = SettingsStore.shared.settings
+            if !settings.excludedWindowRules.contains(newRule) {
+                settings.excludedWindowRules.append(newRule)
+                SettingsStore.shared.settings = settings
+            }
+        }
+
+        MosaicoLog.log("esclusa finestra [\(id)] '\(managed.window.title ?? "?")'")
+        remove(windowID: id)
+        runtimeExcluded[id] = (managed, rule)
+    }
+
+    /// Riabilita una finestra esclusa: rimuove regola e blocco runtime,
+    /// la riadotta immediatamente.
+    func reenableWindow(_ id: WindowID) {
+        guard let entry = runtimeExcluded.removeValue(forKey: id) else { return }
+        let window = entry.managed.window
+        let bundleID = NSRunningApplication(processIdentifier: window.pid)?.bundleIdentifier
+
+        var settings = SettingsStore.shared.settings
+        // Via la regola creata all'esclusione E ogni regola che matcha il
+        // titolo attuale (residui da titoli cambiati nel frattempo)
+        settings.excludedWindowRules.removeAll {
+            $0 == entry.rule || ($0.bundleID == bundleID && $0.title == window.title)
+        }
+        SettingsStore.shared.settings = settings
+
+        MosaicoLog.log("riabilitata finestra [\(id)] '\(window.title ?? "?")'")
+        manage(window: window, bundleID: bundleID)
+    }
+
+    /// Rimuove una regola persistente orfana (da sessioni precedenti).
     func removeExclusionRule(_ rule: WindowRule) {
         var settings = SettingsStore.shared.settings
         settings.excludedWindowRules.removeAll { $0 == rule }
         SettingsStore.shared.settings = settings
-        MosaicoLog.log("riabilitata finestra \(rule.bundleID) '\(rule.title)'")
+        MosaicoLog.log("rimossa regola \(rule.bundleID) '\(rule.title)'")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.reconcile()
         }

@@ -60,19 +60,18 @@ struct MenuContent: View {
 
         Section("Mosaico") {
             Menu("Escludi finestra") {
-                Section("Gestite (clicca per escludere)") {
-                    ForEach(WindowManager.shared.managedWindowsSnapshot()) { info in
-                        Button("\(info.appName) — \(info.title)") {
-                            WindowManager.shared.excludeWindow(info.id)
-                        }
+                // ✓ = esclusa dal tiling; clicca per invertire
+                ForEach(WindowManager.shared.managedWindowsSnapshot()) { info in
+                    Button("\(info.isExcluded ? "✓" : "　")  \(info.appName) — \(info.title)") {
+                        WindowManager.shared.toggleExclusion(info.id)
                     }
                 }
 
-                let rules = SettingsStore.shared.settings.excludedWindowRules
-                if !rules.isEmpty {
+                let staleRules = WindowManager.shared.staleExclusionRules()
+                if !staleRules.isEmpty {
                     Divider()
-                    Section("Escluse (clicca per riabilitare)") {
-                        ForEach(rules) { rule in
+                    Section("Regole salvate (clicca per rimuovere)") {
+                        ForEach(staleRules) { rule in
                             Button("✓  \(appDisplayName(for: rule.bundleID)) — \(rule.title)") {
                                 WindowManager.shared.removeExclusionRule(rule)
                             }
