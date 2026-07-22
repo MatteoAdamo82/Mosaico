@@ -59,27 +59,48 @@ enum DisplayManager {
         NSScreen.screens.first { displayID(of: $0) == id }
     }
 
-    /// Display adiacente in direzione west/east rispetto a quello dato.
+    /// Display adiacente nella direzione data. Se nessun display sta in
+    /// quella direzione (es. monitor impilati e direzione ovest/est), cicla
+    /// tra i display in ordine spaziale: i comandi restano utilizzabili con
+    /// qualsiasi disposizione.
     static func screen(_ direction: Direction, of screen: NSScreen) -> NSScreen? {
         let origin = axFrame(of: screen)
         let candidates = NSScreen.screens.filter { $0 != screen }
+        guard !candidates.isEmpty else { return nil }
+
+        let geometric: NSScreen?
         switch direction {
         case .west:
-            return candidates
+            geometric = candidates
                 .filter { axFrame(of: $0).midX < origin.midX }
                 .max { axFrame(of: $0).midX < axFrame(of: $1).midX }
         case .east:
-            return candidates
+            geometric = candidates
                 .filter { axFrame(of: $0).midX > origin.midX }
                 .min { axFrame(of: $0).midX < axFrame(of: $1).midX }
         case .north:
-            return candidates
+            geometric = candidates
                 .filter { axFrame(of: $0).midY < origin.midY }
                 .max { axFrame(of: $0).midY < axFrame(of: $1).midY }
         case .south:
-            return candidates
+            geometric = candidates
                 .filter { axFrame(of: $0).midY > origin.midY }
                 .min { axFrame(of: $0).midY < axFrame(of: $1).midY }
+        }
+        if let geometric { return geometric }
+
+        // Fallback: ordina per posizione (x, poi y) e cicla
+        let ordered = NSScreen.screens.sorted {
+            let a = axFrame(of: $0), b = axFrame(of: $1)
+            return a.midX != b.midX ? a.midX < b.midX : a.midY < b.midY
+        }
+        guard let index = ordered.firstIndex(of: screen) else { return nil }
+        let count = ordered.count
+        switch direction {
+        case .west, .north:
+            return ordered[(index - 1 + count) % count]
+        case .east, .south:
+            return ordered[(index + 1) % count]
         }
     }
 }
