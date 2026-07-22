@@ -1,0 +1,10 @@
+.DS_Store
+.build/
+dist/
+*.xcodeproj
+xcuserdata/
+
+# Signing material — never commit
+certs/
+*.p12
+*.pem
