@@ -175,6 +175,87 @@ enum SelfTest {
                   "adozione annidata → assorbe il vicino giusto")
         }
 
+        // Adozione asse verticale: 1 sopra 2 (dopo rotate), bordo basso di 1
+        do {
+            let tree = BSPTree()
+            tree.insert(1, near: nil, leafRect: liveRect(tree))
+            tree.insert(2, near: 1, leafRect: liveRect(tree))
+            tree.rotate270()   // 2 sopra, 1 sotto
+            let before = tree.frames(in: rect, gap: 0)
+            // Alzo il bordo superiore di 1 (che confina con 2) di 60
+            var moved = before[1]!
+            moved.origin.y -= 60
+            moved.size.height += 60
+            tree.adoptFrame(for: 1, actual: moved, in: rect, gap: 0)
+            let after = tree.frames(in: rect, gap: 0)
+            check(abs(after[1]!.height - (before[1]!.height + 60)) < 1 &&
+                  abs(after[2]!.height - (before[2]!.height - 60)) < 1,
+                  "adozione asse verticale")
+        }
+
+        // Warp nelle 4 direzioni
+        do {
+            func warped(_ direction: Direction) -> [WindowID: CGRect] {
+                let tree = BSPTree()
+                tree.insert(1, near: nil, leafRect: liveRect(tree))
+                tree.insert(2, near: 1, leafRect: liveRect(tree))
+                tree.insert(3, near: 2, leafRect: liveRect(tree))
+                tree.warp(3, onto: 1, direction: direction)
+                return tree.frames(in: rect, gap: 0)
+            }
+            let west = warped(.west)
+            check(west[3]!.minX < west[1]!.minX, "warp west")
+            let east = warped(.east)
+            check(east[3]!.minX > east[1]!.minX, "warp east")
+            let north = warped(.north)
+            check(north[3]!.minY < north[1]!.minY, "warp north")
+            let south = warped(.south)
+            check(south[3]!.minY > south[1]!.minY, "warp south")
+        }
+
+        // Drop zone: centro → swap, metà → warp con evidenza corretta
+        do {
+            let frame = CGRect(x: 100, y: 100, width: 400, height: 300)
+            let center = DropZone.resolve(point: CGPoint(x: 300, y: 250), in: frame)
+            check(center.kind == .swap && center.highlight == frame, "drop zone centro → swap")
+
+            let west = DropZone.resolve(point: CGPoint(x: 120, y: 250), in: frame)
+            check(west.kind == .warp(.west) && west.highlight.width == 200 && west.highlight.minX == 100,
+                  "drop zone sinistra → warp west")
+
+            let south = DropZone.resolve(point: CGPoint(x: 300, y: 390), in: frame)
+            check(south.kind == .warp(.south) && south.highlight.minY == 250,
+                  "drop zone bassa → warp south")
+        }
+
+        // Regole di disposition (funzione pura)
+        do {
+            func traits(_ mutate: (inout WindowTraits) -> Void) -> WindowTraits {
+                var t = WindowTraits(role: "AXWindow", subrole: "AXStandardWindow")
+                mutate(&t)
+                return t
+            }
+            func disp(_ t: WindowTraits, apps: [String] = [], rules: [WindowRule] = []) -> WindowDisposition {
+                RulesEngine.disposition(traits: t, excludedBundleIDs: apps, excludedWindowRules: rules)
+            }
+            check(disp(traits { _ in }) == .tile, "regole: standard → tile")
+            check(disp(traits { $0.subrole = "AXDialog" }) == .float, "regole: dialog → float")
+            check(disp(traits { $0.isResizable = false }) == .float, "regole: non-resizable → float")
+            check(disp(traits { $0.cgLayer = 3 }) == .ignore, "regole: layer flottante → ignore")
+            check(disp(traits { $0.title = "Picture in Picture" }) == .ignore, "regole: PiP → ignore")
+            check(disp(traits { $0.bundleID = "com.x" }, apps: ["com.x"]) == .ignore, "regole: app esclusa → ignore")
+            check(disp(traits { $0.bundleID = "com.x"; $0.title = "T" },
+                       rules: [WindowRule(bundleID: "com.x", title: "T")]) == .ignore,
+                  "regole: finestra esclusa → ignore")
+            check(disp(traits { $0.hasWindowParent = true }) == .ignore, "regole: sheet agganciato → ignore")
+        }
+
+        // Rendering scorciatoie
+        do {
+            let binding = KeyBinding.defaultPreset.first { $0.command == .rotate }!
+            check(binding.displayString == "⌥⇧R", "displayString ⌥⇧R per rotate")
+        }
+
         // Preset senza duplicati
         do {
             let keys = KeyBinding.defaultPreset.map { "\($0.keyCode)-\($0.carbonModifiers)" }
