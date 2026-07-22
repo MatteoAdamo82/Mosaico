@@ -61,17 +61,16 @@ struct MenuContent: View {
         Section("Mosaico") {
             Menu("Escludi finestra") {
                 // ✓ = esclusa dal tiling; clicca per invertire
-                ForEach(WindowManager.shared.managedWindowsSnapshot()) { info in
+                ForEach(menuState.windows) { info in
                     Button("\(info.isExcluded ? "✓" : "　")  \(info.appName) — \(info.title)") {
                         WindowManager.shared.toggleExclusion(info.id)
                     }
                 }
 
-                let staleRules = WindowManager.shared.staleExclusionRules()
-                if !staleRules.isEmpty {
+                if !menuState.staleRules.isEmpty {
                     Divider()
                     Section("Regole salvate (clicca per rimuovere)") {
-                        ForEach(staleRules) { rule in
+                        ForEach(menuState.staleRules) { rule in
                             Button("✓  \(appDisplayName(for: rule.bundleID)) — \(rule.title)") {
                                 WindowManager.shared.removeExclusionRule(rule)
                             }

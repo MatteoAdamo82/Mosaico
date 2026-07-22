@@ -170,6 +170,7 @@ final class WindowManager {
         })
         MosaicoLog.log("manage [\(window.id)] '\(window.title ?? "?")' → space \(spaceID) (n=\(workspace.tree.count))")
         applyLayout(workspace: workspace, screen: screen)
+        refreshMenuSnapshot()
     }
 
     /// Foglia da splittare per una finestra nuova: la focussata, o la
@@ -209,6 +210,7 @@ final class WindowManager {
         loc.workspace.remove(windowID)
         if focusedWindowID == windowID { focusedWindowID = nil }
         applyLayoutIfVisible(loc.workspace)
+        refreshMenuSnapshot()
     }
 
     // MARK: - Eventi AX
@@ -368,6 +370,8 @@ final class WindowManager {
         for screen in NSScreen.screens {
             applyLayout(workspace: workspaceManager.activeWorkspace(for: screen), screen: screen)
         }
+
+        refreshMenuSnapshot()
     }
 
     // MARK: - Layout
@@ -713,6 +717,13 @@ final class WindowManager {
         return SettingsStore.shared.settings.excludedWindowRules.filter { !covered.contains($0) }
     }
 
+    /// Aggiorna lo stato osservabile del menu (la MenuBarExtra rivaluta il
+    /// contenuto solo su cambi di stato osservato).
+    func refreshMenuSnapshot() {
+        MenuState.shared.windows = managedWindowsSnapshot()
+        MenuState.shared.staleRules = staleExclusionRules()
+    }
+
     func toggleExclusion(_ id: WindowID) {
         if runtimeExcluded[id] != nil {
             reenableWindow(id)
@@ -742,6 +753,7 @@ final class WindowManager {
         MosaicoLog.log("esclusa finestra [\(id)] '\(managed.window.title ?? "?")'")
         remove(windowID: id)
         runtimeExcluded[id] = (managed, rule)
+        refreshMenuSnapshot()
     }
 
     /// Riabilita una finestra esclusa: rimuove regola e blocco runtime,
@@ -761,6 +773,7 @@ final class WindowManager {
 
         MosaicoLog.log("riabilitata finestra [\(id)] '\(window.title ?? "?")'")
         manage(window: window, bundleID: bundleID)
+        refreshMenuSnapshot()
     }
 
     /// Rimuove una regola persistente orfana (da sessioni precedenti).
@@ -769,6 +782,7 @@ final class WindowManager {
         settings.excludedWindowRules.removeAll { $0 == rule }
         SettingsStore.shared.settings = settings
         MosaicoLog.log("rimossa regola \(rule.bundleID) '\(rule.title)'")
+        refreshMenuSnapshot()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.reconcile()
         }
