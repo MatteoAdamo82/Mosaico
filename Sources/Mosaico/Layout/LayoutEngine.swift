@@ -52,7 +52,7 @@ enum LayoutEngine {
             if hadEnhanced { app.enhancedUserInterface = true }
         }
         if changed > 0 {
-            MosaicoLog.log("apply ws=\(workspace.index) gen=\(generation) set=\(changed)")
+            MosaicoLog.log("apply gen=\(generation) set=\(changed)")
         }
 
         // Re-apply per i ritardatari; le "stubborn" adottano il frame reale nel ratio.

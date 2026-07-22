@@ -5,10 +5,6 @@ final class ManagedWindow {
     let window: AXWindow
     var isFloating = false
     var isZoomed = false
-    /// Frame reale salvato quando la finestra è parcheggiata (workspace nascosto)
-    /// o prima di zoom/float, per il ripristino.
-    var savedFrame: CGRect?
-    var floatFrame: CGRect?
 
     init(window: AXWindow) {
         self.window = window
@@ -17,9 +13,8 @@ final class ManagedWindow {
     var id: WindowID { window.id }
 }
 
-/// Un workspace virtuale (1..7) su un display.
+/// Un workspace: l'albero di tiling di uno space nativo.
 final class Workspace {
-    let index: Int
     let tree = BSPTree()
     /// Tutte le finestre del workspace (anche floating).
     var windows: [WindowID: ManagedWindow] = [:]
@@ -27,12 +22,6 @@ final class Workspace {
     /// Incrementata a ogni apply: invalida i re-apply ritardati quando
     /// l'albero cambia nel frattempo.
     var layoutGeneration = 0
-
-    init(index: Int) {
-        self.index = index
-    }
-
-    var isEmpty: Bool { windows.isEmpty }
 
     func add(_ managed: ManagedWindow, near: WindowID?, leafRect: (WindowID) -> CGRect?) {
         windows[managed.id] = managed

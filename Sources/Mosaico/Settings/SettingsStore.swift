@@ -8,11 +8,19 @@ struct WindowRule: Codable, Equatable, Hashable, Identifiable {
     var id: String { bundleID + "|" + title }
 }
 
+/// Wrapper che assorbe elementi non decodificabili (es. binding salvati che
+/// riferiscono comandi rimossi) senza far fallire l'intero array.
+private struct Failable<T: Decodable>: Decodable {
+    let value: T?
+    init(from decoder: Decoder) {
+        value = try? T(from: decoder)
+    }
+}
+
 struct MosaicoSettings: Codable, Equatable {
     var padding: Double = 7
     var gap: Double = 7
     var mouseFollowsFocus: Bool = true
-    var workspaceCount: Int = 7
     var excludedBundleIDs: [String] = MosaicoSettings.defaultExclusions
     var excludedWindowRules: [WindowRule] = []
     var bindings: [KeyBinding] = KeyBinding.defaultPreset
@@ -20,17 +28,17 @@ struct MosaicoSettings: Codable, Equatable {
 
     init() {}
 
-    // Decodifica tollerante: i campi assenti (settings.json di versioni
-    // precedenti) prendono il default invece di far fallire tutto.
+    // Decodifica tollerante: campi assenti → default; binding singoli
+    // invalidi → scartati senza azzerare il resto.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         padding = try c.decodeIfPresent(Double.self, forKey: .padding) ?? 7
         gap = try c.decodeIfPresent(Double.self, forKey: .gap) ?? 7
         mouseFollowsFocus = try c.decodeIfPresent(Bool.self, forKey: .mouseFollowsFocus) ?? true
-        workspaceCount = try c.decodeIfPresent(Int.self, forKey: .workspaceCount) ?? 7
         excludedBundleIDs = try c.decodeIfPresent([String].self, forKey: .excludedBundleIDs) ?? MosaicoSettings.defaultExclusions
         excludedWindowRules = try c.decodeIfPresent([WindowRule].self, forKey: .excludedWindowRules) ?? []
-        bindings = try c.decodeIfPresent([KeyBinding].self, forKey: .bindings) ?? KeyBinding.defaultPreset
+        let decoded = (try c.decodeIfPresent([Failable<KeyBinding>].self, forKey: .bindings))?.compactMap(\.value) ?? []
+        bindings = decoded.isEmpty ? KeyBinding.defaultPreset : decoded
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
     }
 

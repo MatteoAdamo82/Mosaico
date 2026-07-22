@@ -20,7 +20,6 @@ enum Command: Codable, Equatable, Hashable {
     case moveToWorkspace(Int)
     case moveToWorkspacePrev
     case moveToWorkspaceNext
-    case switchWorkspace(Int)
     case pauseResume
     case retileAll
 
@@ -41,7 +40,6 @@ enum Command: Codable, Equatable, Hashable {
         case .moveToWorkspace(let n): return "Sposta su Spazio \(n)"
         case .moveToWorkspacePrev: return "Sposta su Spazio Precedente"
         case .moveToWorkspaceNext: return "Sposta su Spazio Successivo"
-        case .switchWorkspace(let n): return "Vai a Spazio \(n)"
         case .pauseResume: return "Pausa/Riprendi Tiling"
         case .retileAll: return "Ricalcola Tiling"
         }

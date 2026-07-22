@@ -11,22 +11,6 @@ enum WindowDiscovery {
         }
     }
 
-    /// ID delle finestre attualmente on-screen a layer 0 (finestre "vere"),
-    /// per la riconciliazione col modello.
-    static func onScreenWindowIDs() -> Set<WindowID> {
-        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
-                                                    kCGNullWindowID) as? [[String: Any]] else {
-            return []
-        }
-        var ids = Set<WindowID>()
-        for info in list {
-            guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
-                  let number = info[kCGWindowNumber as String] as? UInt32 else { continue }
-            ids.insert(number)
-        }
-        return ids
-    }
-
     /// Finestre AX di un'app con retry/backoff (le app appena lanciate
     /// rispondono kAXErrorCannotComplete per un po'; Electron ha l'albero
     /// AX lazy finché non viene "pokato").

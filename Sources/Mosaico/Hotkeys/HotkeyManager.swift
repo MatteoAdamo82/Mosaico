@@ -11,9 +11,6 @@ final class HotkeyManager {
     private var eventHandler: EventHandlerRef?
     private var nextID: UInt32 = 1
 
-    /// Binding che non si sono potuti registrare (collisioni con altre app).
-    private(set) var failedBindings: [KeyBinding] = []
-
     func register(_ bindings: [KeyBinding]) {
         unregisterAll()
         installHandlerIfNeeded()
@@ -34,7 +31,8 @@ final class HotkeyManager {
                 hotKeyRefs.append(ref)
                 commandsByID[id] = binding.command
             } else {
-                failedBindings.append(binding)
+                // Collisione con un'altra app o con una scorciatoia di sistema
+                MosaicoLog.log("hotkey non registrata (\(status)): \(binding.displayString) → \(binding.command.title)")
             }
             _ = hotKeyID
         }
@@ -46,7 +44,6 @@ final class HotkeyManager {
         }
         hotKeyRefs.removeAll()
         commandsByID.removeAll()
-        failedBindings.removeAll()
     }
 
     private func installHandlerIfNeeded() {

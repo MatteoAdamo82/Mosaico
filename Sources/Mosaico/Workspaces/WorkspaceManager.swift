@@ -9,7 +9,7 @@ final class WorkspaceManager {
 
     /// Stato di un singolo space nativo: un workspace.
     final class SpaceState {
-        let workspace = Workspace(index: 1)
+        let workspace = Workspace()
     }
 
     /// Stato per display: uno SpaceState per ogni space nativo visto.

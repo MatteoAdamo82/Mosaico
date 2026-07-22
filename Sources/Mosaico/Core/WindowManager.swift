@@ -69,7 +69,6 @@ final class WindowManager {
         for app in WindowDiscovery.tileableApps() {
             adopt(app: app)
         }
-        updateSpaceIndicator()
 
         // Cattura il focus iniziale quando lo scan è assestato
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
@@ -162,7 +161,7 @@ final class WindowManager {
         workspace.add(managed, near: insertionAnchor(in: workspace, excluding: window.id), leafRect: { [weak self] id in
             self?.frameOfLeaf(id, in: workspace)
         })
-        MosaicoLog.log("manage [\(window.id)] '\(window.title ?? "?")' → space \(spaceID) ws \(workspace.index) (n=\(workspace.tree.count))")
+        MosaicoLog.log("manage [\(window.id)] '\(window.title ?? "?")' → space \(spaceID) (n=\(workspace.tree.count))")
         applyLayout(workspace: workspace, screen: screen)
     }
 
@@ -268,16 +267,7 @@ final class WindowManager {
                   self.workspaceManager.isVisible(loc.workspace),
                   let screen = DisplayManager.screen(withDisplayID: loc.display.displayID) else { return }
 
-            let rect = LayoutEngine.workspaceRect(for: screen)
-            let gap = CGFloat(SettingsStore.shared.settings.gap)
-            guard let expected = loc.workspace.tree.frames(in: rect, gap: gap)[id] else { return }
-
-            let actual = loc.managed.window.frame
-            guard !LayoutEngine.rectsEqual(actual, expected) else { return }
-
-            MosaicoLog.log("adjust [\(id)] expected=\(expected) actual=\(actual)")
-            loc.workspace.tree.adoptFrame(for: id, actual: actual, in: rect, gap: gap)
-            self.applyLayout(workspace: loc.workspace, screen: screen)
+            self.adoptDivergences(workspace: loc.workspace, screen: screen)
         }
 
         pendingAdjustments[id] = work
@@ -302,7 +292,6 @@ final class WindowManager {
     private func handleSpaceChanged() {
         guard !isPaused else { return }
         MosaicoLog.log("space nativo cambiato")
-        updateSpaceIndicator()
         for screen in NSScreen.screens {
             applyLayout(workspace: workspaceManager.activeWorkspace(for: screen), screen: screen)
         }
@@ -310,13 +299,6 @@ final class WindowManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             self?.reconcile()
         }
-    }
-
-    /// Indicatore menubar: numero ordinale dello space nativo corrente.
-    private func updateSpaceIndicator() {
-        let screen = NSScreen.main ?? NSScreen.screens.first
-        guard let screen, let ordinal = SpaceTracker.currentSpaceOrdinal(for: screen) else { return }
-        MenuState.shared.activeWorkspace = ordinal.current
     }
 
     /// Rimuove le finestre il cui AXUIElement non risponde più.
@@ -489,13 +471,6 @@ final class WindowManager {
             if target < 1 { target = ordinal.total }
             if target > ordinal.total { target = 1 }
             moveToNativeSpace(target)
-
-        case .switchWorkspace(let n):
-            // Delega a Mission Control (richiede gli shortcut Ctrl+N attivi
-            // in Impostazioni di Sistema → Tastiera → Mission Control)
-            if let key = EventPoster.digitKeyCode(n) {
-                EventPoster.postCtrlKey(key)
-            }
 
         case .pauseResume, .retileAll:
             break
@@ -773,27 +748,15 @@ final class WindowManager {
         }
         guard let (targetID, tf) = target else { return nil }
 
-        let rx = (point.x - tf.minX) / tf.width
-        let ry = (point.y - tf.minY) / tf.height
-
-        if (0.3...0.7).contains(rx) && (0.3...0.7).contains(ry) {
+        let zone = DropZone.resolve(point: point, in: tf)
+        switch zone.kind {
+        case .swap:
             return DropResolution(workspace: workspace, screen: screen,
-                                  kind: .swap(targetID), highlight: tf)
-        }
-        if abs(rx - 0.5) > abs(ry - 0.5) {
-            let direction: Direction = rx < 0.5 ? .west : .east
-            var half = tf
-            half.size.width /= 2
-            if direction == .east { half.origin.x = tf.midX }
+                                  kind: .swap(targetID), highlight: zone.highlight)
+        case .warp(let direction):
             return DropResolution(workspace: workspace, screen: screen,
-                                  kind: .warp(targetID, direction), highlight: half)
+                                  kind: .warp(targetID, direction), highlight: zone.highlight)
         }
-        let direction: Direction = ry < 0.5 ? .north : .south
-        var half = tf
-        half.size.height /= 2
-        if direction == .south { half.origin.y = tf.midY }
-        return DropResolution(workspace: workspace, screen: screen,
-                              kind: .warp(targetID, direction), highlight: half)
     }
 
     /// Preview live durante il drag: evidenzia la zona di drop.
@@ -860,29 +823,35 @@ final class WindowManager {
     func handleDragEnd() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             guard let self, !self.isPaused, NSEvent.pressedMouseButtons == 0 else { return }
-            let gap = CGFloat(SettingsStore.shared.settings.gap)
             for screen in NSScreen.screens {
-                let workspace = self.workspaceManager.activeWorkspace(for: screen)
-                let rect = LayoutEngine.workspaceRect(for: screen)
-                var frames = workspace.tree.frames(in: rect, gap: gap)
-                var needsApply = false
-                for (id, expected) in frames {
-                    guard let managed = workspace.windows[id], !managed.isFloating, !managed.isZoomed else { continue }
-                    let actual = managed.window.frame
-                    if abs(actual.width - expected.width) > 6 || abs(actual.height - expected.height) > 6 {
-                        MosaicoLog.log("dragEnd adopt [\(id)] expected=\(expected) actual=\(actual)")
-                        workspace.tree.adoptFrame(for: id, actual: actual, in: rect, gap: gap)
-                        frames = workspace.tree.frames(in: rect, gap: gap)
-                        needsApply = true
-                    } else if !LayoutEngine.rectsEqual(actual, expected) {
-                        MosaicoLog.log("dragEnd snapback [\(id)] actual=\(actual)")
-                        needsApply = true
-                    }
-                }
-                if needsApply {
-                    self.applyLayout(workspace: workspace, screen: screen)
-                }
+                self.adoptDivergences(workspace: self.workspaceManager.activeWorkspace(for: screen), screen: screen)
             }
+        }
+    }
+
+    /// Percorso unico di adozione: confronta frame reali e di layout del
+    /// workspace, adotta i resize (>6pt) nei ratio, riporta al layout le
+    /// finestre solo spostate. Usato sia dal debounce sugli eventi AX sia
+    /// dal mouse-up (per le app che non emettono notifiche, es. Electron).
+    private func adoptDivergences(workspace: Workspace, screen: NSScreen) {
+        let gap = CGFloat(SettingsStore.shared.settings.gap)
+        let rect = LayoutEngine.workspaceRect(for: screen)
+        var frames = workspace.tree.frames(in: rect, gap: gap)
+        var needsApply = false
+        for (id, expected) in frames {
+            guard let managed = workspace.windows[id], !managed.isFloating, !managed.isZoomed else { continue }
+            let actual = managed.window.frame
+            if abs(actual.width - expected.width) > 6 || abs(actual.height - expected.height) > 6 {
+                MosaicoLog.log("adopt [\(id)] expected=\(expected) actual=\(actual)")
+                workspace.tree.adoptFrame(for: id, actual: actual, in: rect, gap: gap)
+                frames = workspace.tree.frames(in: rect, gap: gap)
+                needsApply = true
+            } else if !LayoutEngine.rectsEqual(actual, expected) {
+                needsApply = true
+            }
+        }
+        if needsApply {
+            applyLayout(workspace: workspace, screen: screen)
         }
     }
 
