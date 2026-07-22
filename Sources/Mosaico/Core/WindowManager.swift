@@ -155,7 +155,11 @@ final class WindowManager {
         if disposition == .float {
             managed.isFloating = true
             workspace.add(managed, near: nil, leafRect: { _ in nil })
-            return   // le float restano dove sono
+            // Le float restano dove sono ma sopra le tiled, o spariscono
+            if workspaceManager.isVisible(workspace) {
+                window.raise()
+            }
+            return
         }
 
         workspace.add(managed, near: insertionAnchor(in: workspace, excluding: window.id), leafRect: { [weak self] id in
@@ -694,6 +698,17 @@ final class WindowManager {
             MosaicoLog.log("esclusa finestra [\(id)] \(rule.bundleID) '\(rule.title)'")
         }
         remove(windowID: id)
+    }
+
+    /// Riabilita una finestra esclusa: rimuove la regola e la riadotta subito.
+    func removeExclusionRule(_ rule: WindowRule) {
+        var settings = SettingsStore.shared.settings
+        settings.excludedWindowRules.removeAll { $0 == rule }
+        SettingsStore.shared.settings = settings
+        MosaicoLog.log("riabilitata finestra \(rule.bundleID) '\(rule.title)'")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.reconcile()
+        }
     }
 
     // MARK: - Drop zones (stile yabai)

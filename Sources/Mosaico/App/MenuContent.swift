@@ -60,9 +60,23 @@ struct MenuContent: View {
 
         Section("Mosaico") {
             Menu("Escludi finestra") {
-                ForEach(WindowManager.shared.managedWindowsSnapshot()) { info in
-                    Button("\(info.appName) — \(info.title)") {
-                        WindowManager.shared.excludeWindow(info.id)
+                Section("Gestite (clicca per escludere)") {
+                    ForEach(WindowManager.shared.managedWindowsSnapshot()) { info in
+                        Button("\(info.appName) — \(info.title)") {
+                            WindowManager.shared.excludeWindow(info.id)
+                        }
+                    }
+                }
+
+                let rules = SettingsStore.shared.settings.excludedWindowRules
+                if !rules.isEmpty {
+                    Divider()
+                    Section("Escluse (clicca per riabilitare)") {
+                        ForEach(rules) { rule in
+                            Button("✓  \(appDisplayName(for: rule.bundleID)) — \(rule.title)") {
+                                WindowManager.shared.removeExclusionRule(rule)
+                            }
+                        }
                     }
                 }
             }
@@ -91,5 +105,12 @@ struct MenuContent: View {
         Button("\(shortcut)  \(command.title)") {
             WindowManager.shared.perform(command)
         }
+    }
+
+    private func appDisplayName(for bundleID: String) -> String {
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+            return FileManager.default.displayName(atPath: url.path)
+        }
+        return bundleID
     }
 }

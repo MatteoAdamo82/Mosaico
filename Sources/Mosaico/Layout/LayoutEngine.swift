@@ -55,6 +55,13 @@ enum LayoutEngine {
             MosaicoLog.log("apply gen=\(generation) set=\(changed)")
         }
 
+        // Le float (dialog, finestre a dimensione fissa) restano SOPRA le
+        // tiled — altrimenti spariscono dietro il tiling che copre tutto
+        // lo schermo (comportamento i3-style)
+        for (_, managed) in workspace.windows where managed.isFloating {
+            managed.window.raise()
+        }
+
         // Re-apply per i ritardatari; le "stubborn" adottano il frame reale nel ratio.
         // Salta se nel frattempo il layout è cambiato (frame ormai stali) o se
         // c'è un drag in corso.

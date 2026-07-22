@@ -133,6 +133,11 @@ final class AXWindow {
 
     // MARK: - Focus
 
+    /// Porta la finestra sopra le altre senza cambiare focus/app attiva.
+    func raise() {
+        AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+    }
+
     func focus() {
         if let app = NSRunningApplication(processIdentifier: pid) {
             app.activate()
