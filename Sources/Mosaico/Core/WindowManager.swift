@@ -190,6 +190,8 @@ final class WindowManager {
 
     private func removeApp(pid: pid_t) {
         observerCenter.stopObserving(pid: pid)
+        // Le esclusioni runtime dell'app terminata non servono più
+        runtimeExcluded = runtimeExcluded.filter { $0.value.managed.window.pid != pid }
         var touched: [Workspace] = []
         for (_, display) in workspaceManager.displays {
             for (_, spaceState) in display.spaces {
@@ -203,6 +205,7 @@ final class WindowManager {
         for ws in touched {
             applyLayoutIfVisible(ws)
         }
+        refreshMenuSnapshot()
     }
 
     private func remove(windowID: WindowID) {
@@ -699,7 +702,9 @@ final class WindowManager {
                 }
             }
         }
-        for (id, entry) in runtimeExcluded where entry.managed.window.isValid {
+        // Niente filtro isValid: le finestre di altri space risultano
+        // "invalide" via AX pur esistendo. Pulizia solo quando l'app termina.
+        for (id, entry) in runtimeExcluded {
             let app = NSRunningApplication(processIdentifier: entry.managed.window.pid)
             result.append(WindowInfo(id: id,
                                      title: entry.managed.window.title ?? entry.rule?.title ?? "(senza titolo)",
