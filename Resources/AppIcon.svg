@@ -1,0 +1,20 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Icona Mosaico: 3 piastrelle in proporzione aurea su squircle scuro.
+       Griglia icone macOS: squircle 824x824 centrato, raggio ~185. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1B2A4A"/>
+      <stop offset="1" stop-color="#0F1B33"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+
+  <!-- area utile 700x700 (x/y 162..862), gap 24 -->
+  <!-- A: colonna sinistra, 61.8% -->
+  <rect x="162" y="162" width="421" height="700" rx="36" fill="#3A86FF"/>
+  <!-- B: destra in alto, 61.8% dell'altezza -->
+  <rect x="607" y="162" width="255" height="421" rx="36" fill="#2EC4B6"/>
+  <!-- C: destra in basso -->
+  <rect x="607" y="607" width="255" height="255" rx="36" fill="#8338EC"/>
+</svg>
