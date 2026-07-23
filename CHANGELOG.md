@@ -5,6 +5,16 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-07-23
+
+### Fixed
+
+- The "Impostazioni…" menu item did nothing: the SwiftUI `Settings` scene is
+  only reachable through unreliable private selectors in a menubar-only app,
+  so the settings window is now managed directly and opens reliably
+- Clarified pause/resume and re-tile in the menu (play/pause glyphs); both
+  remain reachable by menu and hotkey (⌃⌥Q, ⌃⌥R) while tiling is paused
+
 ## [0.1.1] - 2026-07-23
 
 ### Added

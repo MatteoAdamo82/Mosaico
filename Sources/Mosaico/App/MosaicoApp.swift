@@ -29,9 +29,5 @@ struct MosaicoApp: App {
             Image(nsImage: menuState.isPaused ? MenuBarIcon.paused : MenuBarIcon.normal)
         }
         .menuBarExtraStyle(.menu)
-
-        Settings {
-            SettingsView()
-        }
     }
 }

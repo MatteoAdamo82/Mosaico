@@ -79,14 +79,13 @@ struct MenuContent: View {
                 }
             }
 
-            Button("⌃⌥Q  \(menuState.isPaused ? "Riprendi Tiling" : "Pausa Tiling")") {
+            Button("⌃⌥Q  \(menuState.isPaused ? "▶ Riprendi Tiling" : "⏸ Pausa Tiling")") {
                 WindowManager.shared.perform(.pauseResume)
             }
             cmd(.retileAll, "⌃⌥R")
 
             Button("Impostazioni…") {
-                NSApp.activate(ignoringOtherApps: true)
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                SettingsWindowController.shared.show()
             }
             .keyboardShortcut(",", modifiers: .command)
         }

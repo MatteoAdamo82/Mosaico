@@ -412,11 +412,14 @@ final class WindowManager {
         case .pauseResume:
             isPaused.toggle()
             MenuState.shared.isPaused = isPaused
+            MosaicoLog.log(isPaused ? "tiling in pausa" : "tiling ripreso")
             if !isPaused { reconcile() }
+            refreshMenuSnapshot()
             return
         case .retileAll:
             isPaused = false
             MenuState.shared.isPaused = false
+            MosaicoLog.log("ricalcolo tiling (pausa disattivata)")
             reconcile()
             return
         default:
