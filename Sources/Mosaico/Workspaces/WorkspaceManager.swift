@@ -34,27 +34,45 @@ final class WorkspaceManager {
 
     // MARK: - Setup display
 
+    /// Stato dei display temporaneamente assenti (es. durante lo standby):
+    /// conservato per non distruggere il layout se il display ritorna.
+    private var detachedDisplays: [CGDirectDisplayID: DisplayState] = [:]
+
     func syncDisplays() {
         var seen = Set<CGDirectDisplayID>()
         for screen in NSScreen.screens {
             let id = DisplayManager.displayID(of: screen)
             seen.insert(id)
             if displays[id] == nil {
-                displays[id] = DisplayState(displayID: id)
+                // Display ricomparso (wake): ripristina lo stato conservato
+                displays[id] = detachedDisplays.removeValue(forKey: id) ?? DisplayState(displayID: id)
             }
         }
-        // Display scollegati: merge delle finestre sul primario
+        // Display spariti: NON fondere subito — al wake riappaiono in pochi
+        // secondi. Sposta lo stato in "detached"; il merge sul primario
+        // avviene solo se il display resta assente (vedi mergeStaleDetached).
         let orphans = displays.keys.filter { !seen.contains($0) }
-        guard let primary = NSScreen.screens.first else { return }
         for orphanID in orphans {
-            guard let orphan = displays.removeValue(forKey: orphanID) else { continue }
-            let target = activeWorkspace(for: primary)
+            if let orphan = displays.removeValue(forKey: orphanID) {
+                detachedDisplays[orphanID] = orphan
+            }
+        }
+    }
+
+    /// Fonde sul primario le finestre dei display rimasti assenti a lungo
+    /// (unplug reale, non standby). Da chiamare dopo un grace period.
+    func mergeStaleDetached() {
+        guard !detachedDisplays.isEmpty,
+              let primary = NSScreen.screens.first else { return }
+        let target = activeWorkspace(for: primary)
+        for (_, orphan) in detachedDisplays {
             for (_, spaceState) in orphan.spaces {
                 for (_, managed) in spaceState.workspace.windows {
                     target.add(managed, near: nil, leafRect: { _ in managed.window.frame })
                 }
             }
         }
+        detachedDisplays.removeAll()
     }
 
     // MARK: - Risoluzione space/workspace

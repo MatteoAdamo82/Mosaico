@@ -7,6 +7,7 @@ final class AppLifecycleObserver {
     var onAppActivated: ((NSRunningApplication) -> Void)?
     var onDisplaysChanged: (() -> Void)?
     var onSpaceChanged: (() -> Void)?
+    var onWake: (() -> Void)?
 
     private var tokens: [NSObjectProtocol] = []
 
@@ -40,6 +41,12 @@ final class AppLifecycleObserver {
         tokens.append(wsCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
                                            object: nil, queue: .main) { [weak self] _ in
             self?.onSpaceChanged?()
+        })
+
+        // Risveglio dallo standby
+        tokens.append(wsCenter.addObserver(forName: NSWorkspace.didWakeNotification,
+                                           object: nil, queue: .main) { [weak self] _ in
+            self?.onWake?()
         })
     }
 

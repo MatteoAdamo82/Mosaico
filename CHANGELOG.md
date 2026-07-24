@@ -5,6 +5,21 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-07-24
+
+### Fixed
+
+- Waking from standby no longer scrambles window positions: displays that
+  disappear briefly during wake are kept detached and restored when they
+  come back, instead of merging their windows onto the primary display. A
+  genuinely unplugged display's windows are still recovered after a grace
+  period
+- Minimized windows no longer take a tile slot on screen: windows minimized
+  while an event was missed (e.g. during sleep) are pruned from the layout
+  and re-added when restored
+- Added a wake handler that re-syncs displays and re-tiles after the system
+  settles
+
 ## [0.1.2] - 2026-07-23
 
 ### Fixed

@@ -59,9 +59,20 @@ final class WindowManager {
             guard let self else { return }
             self.workspaceManager.syncDisplays()
             self.retileAll()
+            // Un display sparito ma non tornato entro il grace period è un
+            // unplug reale: recupera le sue finestre sul primario. Se invece
+            // è standby, torna prima e non c'è nulla da fondere.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self else { return }
+                self.workspaceManager.mergeStaleDetached()
+                self.retileAll()
+            }
         }
         lifecycle.onSpaceChanged = { [weak self] in
             self?.handleSpaceChanged()
+        }
+        lifecycle.onWake = { [weak self] in
+            self?.handleWake()
         }
         lifecycle.start()
 
@@ -313,6 +324,38 @@ final class WindowManager {
         }
     }
 
+    /// Al risveglio i display si riconfigurano con qualche secondo di ritardo:
+    /// aspetta che si assestino, poi ripristina il layout senza distruggere
+    /// gli stati dei display tornati. Se qualche display è davvero sparito
+    /// (unplug durante lo standby), solo allora fonde le sue finestre.
+    private func handleWake() {
+        MosaicoLog.log("wake dallo standby")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self, !self.isPaused else { return }
+            self.workspaceManager.syncDisplays()
+            self.workspaceManager.mergeStaleDetached()
+            self.reconcile()
+        }
+    }
+
+    /// Rimuove dai tree le finestre diventate minimizzate: altrimenti la
+    /// riconciliazione riapplica loro un frame e le riporta a schermo.
+    private func pruneMinimizedWindows() {
+        var toRemove: [WindowID] = []
+        for (_, display) in workspaceManager.displays {
+            for (_, spaceState) in display.spaces {
+                for (id, managed) in spaceState.workspace.windows
+                where !managed.isFloating && managed.window.isMinimized {
+                    toRemove.append(id)
+                }
+            }
+        }
+        for id in toRemove {
+            MosaicoLog.log("rimossa minimizzata [\(id)]")
+            remove(windowID: id)
+        }
+    }
+
     /// Rimuove le finestre il cui AXUIElement non risponde più.
     /// SOLO sullo space visibile: le finestre degli altri spaces non sono
     /// raggiungibili via AX e risulterebbero "invalide" pur esistendo —
@@ -339,8 +382,9 @@ final class WindowManager {
         guard !isPaused, started else { return }
         guard NSEvent.pressedMouseButtons == 0 else { return }
 
-        // 1. Rimuovi finestre morte
+        // 1. Rimuovi finestre morte e minimizzate
         pruneInvalidWindows()
+        pruneMinimizedWindows()
 
         // 2. Ricolloca finestre spostate su un altro space nativo
         //    (es. trascinate in Mission Control)
