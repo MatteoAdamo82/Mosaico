@@ -5,7 +5,7 @@ protocol MouseManagerDelegate: AnyObject {
     func managedWindowCached(at point: CGPoint) -> ManagedWindow?
     func performDrop(source: ManagedWindow, at point: CGPoint)
     func handlePlainDrop(at point: CGPoint)
-    func handleDragEnd()
+    func handleDragEnd(at point: CGPoint)
     func updateDropPreview(at point: CGPoint)
     func endDropPreview()
     func adjustRatio(for managed: ManagedWindow, delta: CGVector)
@@ -190,10 +190,11 @@ final class MouseManager {
             if case .move(let managed, _) = session {
                 session = nil
                 if !managed.isFloating {
+                    // performDrop already applies the layout for the moved
+                    // window — no blanket handleDragEnd (would touch others).
                     DispatchQueue.main.async { [weak self] in
                         self?.delegate?.performDrop(source: managed, at: point)
                         self?.delegate?.endDropPreview()
-                        self?.delegate?.handleDragEnd()
                     }
                 }
                 return nil
@@ -201,17 +202,19 @@ final class MouseManager {
             DispatchQueue.main.async { [weak self] in
                 self?.delegate?.handlePlainDrop(at: point)
                 self?.delegate?.endDropPreview()
-                if wasDrag { self?.delegate?.handleDragEnd() }
+                if wasDrag { self?.delegate?.handleDragEnd(at: point) }
             }
             return Unmanaged.passUnretained(event)
 
         case .rightMouseUp:
-            guard case .resize = session else {
+            guard case .resize(let managed, _) = session else {
                 return Unmanaged.passUnretained(event)
             }
             session = nil
+            // Adopt only the window that was resized (its frame center).
+            let center = managed.window.frameIfReadable.map { CGPoint(x: $0.midX, y: $0.midY) } ?? point
             DispatchQueue.main.async { [weak self] in
-                self?.delegate?.handleDragEnd()
+                self?.delegate?.handleDragEnd(at: center)
             }
             return nil
 

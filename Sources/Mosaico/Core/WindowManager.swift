@@ -968,44 +968,46 @@ final class WindowManager {
         performDrop(source: source, at: point)
     }
 
-    /// End of any mouse gesture: adopts manual resizes
-    /// (without relying on AX notifications, which Electron & co. do not emit)
-    /// and brings windows that were only moved back to the layout.
-    func handleDragEnd() {
+    /// End of a real mouse gesture at `point`: adopts the manual resize of
+    /// ONLY the window the user actually manipulated (the one at the release
+    /// point). Scanning every window would re-adopt the constrained size of
+    /// unrelated windows (e.g. apps with a fixed/min width) on every drag,
+    /// scrambling the layout.
+    func handleDragEnd(at point: CGPoint) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            guard let self, !self.isPaused, NSEvent.pressedMouseButtons == 0 else { return }
-            for screen in NSScreen.screens {
-                self.adoptDivergences(workspace: self.workspaceManager.activeWorkspace(for: screen), screen: screen)
+            guard let self, !self.isPaused, NSEvent.pressedMouseButtons == 0,
+                  let loc = self.windowAtPointForAdoption(point),
+                  !loc.managed.isFloating, !loc.managed.isZoomed,
+                  self.workspaceManager.isVisible(loc.workspace),
+                  let screen = DisplayManager.screen(withDisplayID: loc.display.displayID) else { return }
+
+            let gap = CGFloat(SettingsStore.shared.settings.gap)
+            let rect = LayoutEngine.workspaceRect(for: screen)
+            guard let expected = loc.workspace.tree.frames(in: rect, gap: gap)[loc.managed.id],
+                  let actual = loc.managed.window.frameIfReadable else { return }
+
+            // Only a real resize (size changed) is adopted; a pure move
+            // snaps back via the layout re-apply.
+            if abs(actual.width - expected.width) > 6 || abs(actual.height - expected.height) > 6 {
+                MosaicoLog.log("adopt [\(loc.managed.id)] expected=\(expected) actual=\(actual)")
+                loc.workspace.tree.adoptFrame(for: loc.managed.id, actual: actual, in: rect, gap: gap)
+                applyLayout(workspace: loc.workspace, screen: screen)
+            } else if !LayoutEngine.rectsEqual(actual, expected) {
+                applyLayout(workspace: loc.workspace, screen: screen)
             }
         }
     }
 
-    /// Single adoption path: compares the workspace's real and layout
-    /// frames, adopts the resizes (>6pt) into the ratios, brings windows that
-    /// were only moved back to the layout. Used both by the debounce on AX events
-    /// and by mouse-up (for apps that do not emit notifications, e.g. Electron).
-    private func adoptDivergences(workspace: Workspace, screen: NSScreen) {
-        let gap = CGFloat(SettingsStore.shared.settings.gap)
-        let rect = LayoutEngine.workspaceRect(for: screen)
-        var frames = workspace.tree.frames(in: rect, gap: gap)
-        var needsApply = false
-        for (id, expected) in frames {
-            guard let managed = workspace.windows[id], !managed.isFloating, !managed.isZoomed else { continue }
-            // Unreadable frame (AX glitch): skip. Adopting a degenerate rect
-            // would wreck every split ratio in the tree.
-            guard let actual = managed.window.frameIfReadable else { continue }
-            if abs(actual.width - expected.width) > 6 || abs(actual.height - expected.height) > 6 {
-                MosaicoLog.log("adopt [\(id)] expected=\(expected) actual=\(actual)")
-                workspace.tree.adoptFrame(for: id, actual: actual, in: rect, gap: gap)
-                frames = workspace.tree.frames(in: rect, gap: gap)
-                needsApply = true
-            } else if !LayoutEngine.rectsEqual(actual, expected) {
-                needsApply = true
+    /// Tiled window whose real frame contains the point (for adoption).
+    private func windowAtPointForAdoption(_ point: CGPoint) -> WorkspaceManager.Location? {
+        guard let screen = DisplayManager.screen(containingAX: point) else { return nil }
+        let workspace = workspaceManager.activeWorkspace(for: screen)
+        for (id, managed) in workspace.windows where !managed.isFloating {
+            if let f = managed.window.frameIfReadable, f.contains(point) {
+                return workspaceManager.locate(id)
             }
         }
-        if needsApply {
-            applyLayout(workspace: workspace, screen: screen)
-        }
+        return nil
     }
 
     // MARK: - Access for MouseManager

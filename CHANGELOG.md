@@ -5,6 +5,16 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-07-24
+
+### Fixed
+
+- Dragging any window could rearrange unrelated ones: the end-of-drag
+  adoption scanned *every* window in the workspace, so apps whose width is
+  constrained (fixed or minimum size) had their constrained size re-adopted
+  into the split ratios on each gesture, shifting their neighbors. Adoption
+  is now limited to the single window the user actually manipulated
+
 ## [0.1.7] - 2026-07-24
 
 ### Fixed
