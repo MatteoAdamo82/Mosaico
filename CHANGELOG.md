@@ -5,6 +5,20 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.10] - 2026-07-24
+
+### Fixed
+
+- Resizing a window by dragging a border still reverted a second later. The
+  window being manipulated was picked by proximity to the mouse-down point,
+  but a border drag starts exactly on the edge: the point belongs to no
+  window's frame (or to two), so the neighbor was often picked instead. That
+  neighbor had not changed, nothing was adopted, and the next layout pass
+  restored the old size. All windows adjacent to the grab point are now
+  remembered, and on release the one whose size actually changed is adopted
+- Grab and adoption decisions are written to the debug log, so this class of
+  problem can be diagnosed from the log instead of guessed at
+
 ## [0.1.9] - 2026-07-24
 
 ### Fixed
