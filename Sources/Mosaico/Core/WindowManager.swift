@@ -374,6 +374,9 @@ final class WindowManager {
     private func reconcile() {
         guard !isPaused, started else { return }
         guard NSEvent.pressedMouseButtons == 0 else { return }
+        // A gesture just ended: its adoption is still pending, re-applying
+        // now would snap the window back to its pre-resize size.
+        guard Date() >= adoptionPendingUntil else { return }
 
         // Post-wake grace period: only re-apply the existing tree,
         // no structural change (positions stay the saved ones)
@@ -867,25 +870,21 @@ final class WindowManager {
     /// The window the user is dragging: tiled, real frame that
     /// contains the cursor, origin far from the layout but SAME dimensions —
     /// a resize changes the dimensions and is NOT a drag.
+    /// The window being dragged: only the one grabbed at mouse-down is
+    /// checked (ONE AX read), and only if it is being MOVED — same size,
+    /// shifted origin. A resize is not a drag. Scanning every window here
+    /// would mean dozens of AX reads per second during a gesture.
     private func findDragSource(at point: CGPoint) -> ManagedWindow? {
-        let gap = CGFloat(SettingsStore.shared.settings.gap)
-        var best: (ManagedWindow, CGFloat)?
-        for screen in NSScreen.screens {
-            let workspace = workspaceManager.activeWorkspace(for: screen)
-            let frames = workspace.tree.frames(in: LayoutEngine.workspaceRect(for: screen), gap: gap)
-            for (id, expected) in frames {
-                guard let managed = workspace.windows[id], !managed.isFloating, !managed.isZoomed else { continue }
-                let actual = managed.window.frame
-                guard actual.contains(point) else { continue }
-                guard abs(actual.width - expected.width) < 10,
-                      abs(actual.height - expected.height) < 10 else { continue }
-                let mismatch = abs(actual.origin.x - expected.origin.x) + abs(actual.origin.y - expected.origin.y)
-                if mismatch > 15, best == nil || mismatch > best!.1 {
-                    best = (managed, mismatch)
-                }
-            }
-        }
-        return best?.0
+        guard let candidate = dragCandidate,
+              let loc = workspaceManager.locate(candidate.id),
+              !loc.managed.isFloating, !loc.managed.isZoomed,
+              let actual = loc.managed.window.frameIfReadable else { return nil }
+
+        let sameSize = abs(actual.width - candidate.originalFrame.width) < 10
+            && abs(actual.height - candidate.originalFrame.height) < 10
+        let moved = hypot(actual.origin.x - candidate.originalFrame.origin.x,
+                          actual.origin.y - candidate.originalFrame.origin.y) > 15
+        return (sameSize && moved) ? loc.managed : nil
     }
 
     /// Zones: center (30–70%) → swap; half → warp in the direction.
@@ -968,46 +967,74 @@ final class WindowManager {
         performDrop(source: source, at: point)
     }
 
-    /// End of a real mouse gesture at `point`: adopts the manual resize of
-    /// ONLY the window the user actually manipulated (the one at the release
-    /// point). Scanning every window would re-adopt the constrained size of
-    /// unrelated windows (e.g. apps with a fixed/min width) on every drag,
-    /// scrambling the layout.
-    func handleDragEnd(at point: CGPoint) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            guard let self, !self.isPaused, NSEvent.pressedMouseButtons == 0,
-                  let loc = self.windowAtPointForAdoption(point),
-                  !loc.managed.isFloating, !loc.managed.isZoomed,
-                  self.workspaceManager.isVisible(loc.workspace),
-                  let screen = DisplayManager.screen(withDisplayID: loc.display.displayID) else { return }
+    /// The window grabbed at mouse-down, with its frame at that moment.
+    /// Captured at the START of the gesture: the release point is unreliable
+    /// for edge resizes (it lands on the border or in the gap), and scanning
+    /// every window would re-adopt unrelated size-constrained ones.
+    private struct DragCandidate {
+        let id: WindowID
+        let originalFrame: CGRect
+    }
+    private var dragCandidate: DragCandidate?
 
-            let gap = CGFloat(SettingsStore.shared.settings.gap)
-            let rect = LayoutEngine.workspaceRect(for: screen)
-            guard let expected = loc.workspace.tree.frames(in: rect, gap: gap)[loc.managed.id],
-                  let actual = loc.managed.window.frameIfReadable else { return }
+    /// Reconciliation stays off until this instant: a just-finished gesture
+    /// has a pending adoption, and re-applying meanwhile undoes the resize.
+    private var adoptionPendingUntil = Date.distantPast
 
-            // Only a real resize (size changed) is adopted; a pure move
-            // snaps back via the layout re-apply.
-            if abs(actual.width - expected.width) > 6 || abs(actual.height - expected.height) > 6 {
-                MosaicoLog.log("adopt [\(loc.managed.id)] expected=\(expected) actual=\(actual)")
-                loc.workspace.tree.adoptFrame(for: loc.managed.id, actual: actual, in: rect, gap: gap)
-                applyLayout(workspace: loc.workspace, screen: screen)
-            } else if !LayoutEngine.rectsEqual(actual, expected) {
-                applyLayout(workspace: loc.workspace, screen: screen)
+    /// Called on mouse-down: remembers which tiled window is under the
+    /// cursor (tolerance covers the border/gap of an edge resize).
+    func beginPotentialDrag(at point: CGPoint) {
+        dragCandidate = nil
+        guard !isPaused,
+              let screen = DisplayManager.screen(containingAX: point) else { return }
+        let workspace = workspaceManager.activeWorkspace(for: screen)
+
+        var best: (WindowID, CGRect, CGFloat)?
+        for (id, managed) in workspace.windows where !managed.isFloating && !managed.isZoomed {
+            guard let frame = managed.window.frameIfReadable else { continue }
+            // Tolerance: an edge drag starts a few points outside the frame
+            guard frame.insetBy(dx: -8, dy: -8).contains(point) else { continue }
+            let distance = hypot(point.x - frame.midX, point.y - frame.midY)
+            if best == nil || distance < best!.2 {
+                best = (id, frame, distance)
             }
+        }
+        if let (id, frame, _) = best {
+            dragCandidate = DragCandidate(id: id, originalFrame: frame)
         }
     }
 
-    /// Tiled window whose real frame contains the point (for adoption).
-    private func windowAtPointForAdoption(_ point: CGPoint) -> WorkspaceManager.Location? {
-        guard let screen = DisplayManager.screen(containingAX: point) else { return nil }
-        let workspace = workspaceManager.activeWorkspace(for: screen)
-        for (id, managed) in workspace.windows where !managed.isFloating {
-            if let f = managed.window.frameIfReadable, f.contains(point) {
-                return workspaceManager.locate(id)
+    /// End of a real mouse gesture: adopts the resize of the window grabbed
+    /// at mouse-down, comparing against its frame from that moment.
+    func handleDragEnd() {
+        guard let candidate = dragCandidate else { return }
+        dragCandidate = nil
+        // Keep reconciliation off until this adoption has run
+        adoptionPendingUntil = Date().addingTimeInterval(0.6)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self, !self.isPaused, NSEvent.pressedMouseButtons == 0,
+                  let loc = self.workspaceManager.locate(candidate.id),
+                  !loc.managed.isFloating, !loc.managed.isZoomed,
+                  self.workspaceManager.isVisible(loc.workspace),
+                  let screen = DisplayManager.screen(withDisplayID: loc.display.displayID),
+                  let actual = loc.managed.window.frameIfReadable else { return }
+
+            // Nothing changed during the gesture: leave the layout alone
+            guard !LayoutEngine.rectsEqual(actual, candidate.originalFrame) else { return }
+
+            let gap = CGFloat(SettingsStore.shared.settings.gap)
+            let rect = LayoutEngine.workspaceRect(for: screen)
+            guard let expected = loc.workspace.tree.frames(in: rect, gap: gap)[candidate.id] else { return }
+
+            // Size changed → the user resized: adopt it into the ratios.
+            // Only moved → snap back via layout re-apply.
+            if abs(actual.width - expected.width) > 6 || abs(actual.height - expected.height) > 6 {
+                MosaicoLog.log("adopt [\(candidate.id)] expected=\(expected) actual=\(actual)")
+                loc.workspace.tree.adoptFrame(for: candidate.id, actual: actual, in: rect, gap: gap)
             }
+            applyLayout(workspace: loc.workspace, screen: screen)
         }
-        return nil
     }
 
     // MARK: - Access for MouseManager

@@ -5,6 +5,24 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] - 2026-07-24
+
+### Fixed
+
+- Resizing a window by its edge was slow and the window snapped back to its
+  previous size on release. Two causes, both introduced while narrowing the
+  adoption logic in 0.1.8:
+  - The drag preview read every window's frame through Accessibility
+    ~15 times per second, flooding the main thread during any gesture
+  - Adoption looked up the window under the *release* point, which for an
+    edge resize lands on the border or in the gap, so the resize was never
+    adopted and the next layout pass undid it
+  The manipulated window is now captured at mouse-*down* and compared
+  against its frame from that moment, so both the preview and the adoption
+  cost a single Accessibility read and always target the right window
+- Reconciliation no longer runs in the gap between releasing the mouse and
+  the adoption completing, which could also revert a fresh resize
+
 ## [0.1.8] - 2026-07-24
 
 ### Fixed

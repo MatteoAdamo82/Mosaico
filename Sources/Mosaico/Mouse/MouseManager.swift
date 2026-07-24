@@ -5,7 +5,8 @@ protocol MouseManagerDelegate: AnyObject {
     func managedWindowCached(at point: CGPoint) -> ManagedWindow?
     func performDrop(source: ManagedWindow, at point: CGPoint)
     func handlePlainDrop(at point: CGPoint)
-    func handleDragEnd(at point: CGPoint)
+    func beginPotentialDrag(at point: CGPoint)
+    func handleDragEnd()
     func updateDropPreview(at point: CGPoint)
     func endDropPreview()
     func adjustRatio(for managed: ManagedWindow, delta: CGVector)
@@ -132,6 +133,11 @@ final class MouseManager {
 
         case .leftMouseDown:
             pressPoint = point
+            // Remember which window is grabbed (used at mouse-up to adopt
+            // only that one, and for a cheap drag preview)
+            DispatchQueue.main.async { [weak self] in
+                self?.delegate?.beginPotentialDrag(at: point)
+            }
             guard altDown, let managed = delegate?.managedWindowCached(at: point) else {
                 return Unmanaged.passUnretained(event)
             }
@@ -141,6 +147,9 @@ final class MouseManager {
             return nil   // swallow
 
         case .rightMouseDown:
+            DispatchQueue.main.async { [weak self] in
+                self?.delegate?.beginPotentialDrag(at: point)
+            }
             guard altDown, let managed = delegate?.managedWindowCached(at: point) else {
                 return Unmanaged.passUnretained(event)
             }
@@ -202,7 +211,7 @@ final class MouseManager {
             DispatchQueue.main.async { [weak self] in
                 self?.delegate?.handlePlainDrop(at: point)
                 self?.delegate?.endDropPreview()
-                if wasDrag { self?.delegate?.handleDragEnd(at: point) }
+                if wasDrag { self?.delegate?.handleDragEnd() }
             }
             return Unmanaged.passUnretained(event)
 
@@ -211,10 +220,8 @@ final class MouseManager {
                 return Unmanaged.passUnretained(event)
             }
             session = nil
-            // Adopt only the window that was resized (its frame center).
-            let center = managed.window.frameIfReadable.map { CGPoint(x: $0.midX, y: $0.midY) } ?? point
             DispatchQueue.main.async { [weak self] in
-                self?.delegate?.handleDragEnd(at: center)
+                self?.delegate?.handleDragEnd()
             }
             return nil
 
