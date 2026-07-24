@@ -86,21 +86,25 @@ final class AXWindow {
 
     // MARK: - Frame
 
+    /// Frame read from AX, or nil if the read failed (app busy, window on
+    /// another space, transient glitch). NEVER returns a degenerate rect:
+    /// callers must not mistake a failed read for a real 0x0 window.
+    var frameIfReadable: CGRect? {
+        var pos = CGPoint.zero
+        var size = CGSize.zero
+        guard let posValue = copyAttribute(kAXPositionAttribute),
+              let sizeValue = copyAttribute(kAXSizeAttribute),
+              AXValueGetValue(posValue as! AXValue, .cgPoint, &pos),
+              AXValueGetValue(sizeValue as! AXValue, .cgSize, &size),
+              size.width > 1, size.height > 1 else {
+            return nil
+        }
+        return CGRect(origin: pos, size: size)
+    }
+
     var frame: CGRect {
-        get {
-            var pos = CGPoint.zero
-            var size = CGSize.zero
-            if let value = copyAttribute(kAXPositionAttribute) {
-                AXValueGetValue(value as! AXValue, .cgPoint, &pos)
-            }
-            if let value = copyAttribute(kAXSizeAttribute) {
-                AXValueGetValue(value as! AXValue, .cgSize, &size)
-            }
-            return CGRect(origin: pos, size: size)
-        }
-        set {
-            setFrame(newValue)
-        }
+        get { frameIfReadable ?? .zero }
+        set { setFrame(newValue) }
     }
 
     /// "Set twice" trick (Rectangle): position → size → size, some apps

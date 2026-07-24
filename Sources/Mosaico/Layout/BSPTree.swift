@@ -207,6 +207,9 @@ final class BSPTree {
     /// If there is no divider on that side (screen edge), fall back to the
     /// nearest divider on the other side.
     func adoptFrame(for id: WindowID, actual: CGRect, in rect: CGRect, gap: CGFloat) {
+        // A degenerate rect means a failed AX read, never a real window:
+        // adopting it would corrupt every ratio in the tree.
+        guard actual.width > 1, actual.height > 1 else { return }
         guard let leafNode = leaf(for: id), let root else { return }
         let current = frames(in: rect, gap: gap)
         guard let expected = current[id] else { return }

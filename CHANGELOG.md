@@ -5,6 +5,22 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-07-24
+
+### Fixed
+
+- Layout could get badly scrambled after a drag or drop: when an
+  Accessibility frame read transiently failed, the window reported a
+  degenerate 0×0 rect, which was then adopted into the split ratios and
+  corrupted the whole tree. A failed frame read is now distinguished from a
+  real frame and never adopted (guarded both where frames are read and
+  inside the tree itself)
+
+### Changed
+
+- Code comments, debug log messages and self-test names are now in English
+  (the app UI remains Italian; localization is still on the roadmap)
+
 ## [0.1.6] - 2026-07-24
 
 ### Fixed

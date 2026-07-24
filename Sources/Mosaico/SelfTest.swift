@@ -256,6 +256,19 @@ enum SelfTest {
             check(binding.displayString == "⌥⇧R", "displayString ⌥⇧R for rotate")
         }
 
+        // A degenerate frame (failed AX read) must never be adopted
+        do {
+            let tree = BSPTree()
+            tree.insert(1, near: nil, leafRect: liveRect(tree))
+            tree.insert(2, near: 1, leafRect: liveRect(tree))
+            let before = tree.frames(in: rect, gap: 0)
+            tree.adoptFrame(for: 2, actual: .zero, in: rect, gap: 0)
+            tree.adoptFrame(for: 1, actual: CGRect(x: 0, y: 0, width: 0, height: 600), in: rect, gap: 0)
+            let after = tree.frames(in: rect, gap: 0)
+            check(before[1] == after[1] && before[2] == after[2],
+                  "degenerate frame is not adopted")
+        }
+
         // Preset without duplicates
         do {
             let keys = KeyBinding.defaultPreset.map { "\($0.keyCode)-\($0.carbonModifiers)" }

@@ -991,7 +991,9 @@ final class WindowManager {
         var needsApply = false
         for (id, expected) in frames {
             guard let managed = workspace.windows[id], !managed.isFloating, !managed.isZoomed else { continue }
-            let actual = managed.window.frame
+            // Unreadable frame (AX glitch): skip. Adopting a degenerate rect
+            // would wreck every split ratio in the tree.
+            guard let actual = managed.window.frameIfReadable else { continue }
             if abs(actual.width - expected.width) > 6 || abs(actual.height - expected.height) > 6 {
                 MosaicoLog.log("adopt [\(id)] expected=\(expected) actual=\(actual)")
                 workspace.tree.adoptFrame(for: id, actual: actual, in: rect, gap: gap)
