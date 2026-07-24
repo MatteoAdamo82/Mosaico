@@ -5,6 +5,18 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2026-07-24
+
+### Fixed
+
+- Root cause of the standby layout scramble: on wake the Accessibility API
+  briefly reports existing windows as invalid, and they were pruned from the
+  layout *before* the wake notification arrived (so the post-wake guard was
+  too late), then re-adopted into fresh positions. Window existence is now
+  determined from the window server (CGWindowList), which is authoritative
+  even when Accessibility is momentarily flaky, so transient wake glitches no
+  longer remove windows
+
 ## [0.1.5] - 2026-07-24
 
 ### Fixed

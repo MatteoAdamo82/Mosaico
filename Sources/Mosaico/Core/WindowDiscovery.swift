@@ -11,6 +11,23 @@ enum WindowDiscovery {
         }
     }
 
+    /// Tutti i CGWindowID esistenti (ogni space, anche off-screen). Il window
+    /// server è autorevole sull'ESISTENZA di una finestra — a differenza di
+    /// AX, che al wake riporta transitoriamente le finestre come invalide.
+    static func allWindowIDs() -> Set<WindowID> {
+        guard let list = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements],
+                                                    kCGNullWindowID) as? [[String: Any]] else {
+            return []
+        }
+        var ids = Set<WindowID>()
+        for info in list {
+            if let number = info[kCGWindowNumber as String] as? UInt32 {
+                ids.insert(number)
+            }
+        }
+        return ids
+    }
+
     /// Finestre AX di un'app con retry/backoff (le app appena lanciate
     /// rispondono kAXErrorCannotComplete per un po'; Electron ha l'albero
     /// AX lazy finché non viene "pokato").

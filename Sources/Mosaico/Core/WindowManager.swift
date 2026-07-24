@@ -338,12 +338,15 @@ final class WindowManager {
     /// raggiungibili via AX e risulterebbero "invalide" pur esistendo —
     /// verranno verificate quando l'utente visita il loro space.
     private func pruneInvalidWindows() {
+        // Il window server è autorevole sull'esistenza: se una finestra è
+        // ancora lì, l'invalidità AX è un glitch transitorio (tipico al
+        // wake) e NON va rimossa. Rimuovi solo ciò che è davvero sparito.
+        let existing = WindowDiscovery.allWindowIDs()
         var toRemove: [WindowID] = []
-        for (displayID, display) in workspaceManager.displays {
-            guard let screen = DisplayManager.screen(withDisplayID: displayID),
-                  let visibleSpace = SpaceTracker.currentSpace(for: screen) else { continue }
-            for (spaceID, spaceState) in display.spaces where spaceID == visibleSpace {
-                for (id, managed) in spaceState.workspace.windows where !managed.window.isValid {
+        for (_, display) in workspaceManager.displays {
+            for (_, spaceState) in display.spaces {
+                for (id, managed) in spaceState.workspace.windows
+                where !managed.window.isValid && !existing.contains(id) {
                     toRemove.append(id)
                 }
             }
