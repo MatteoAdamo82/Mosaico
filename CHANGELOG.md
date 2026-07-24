@@ -5,6 +5,22 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-07-24
+
+### Fixed
+
+- Window layout is no longer scrambled when returning from standby. The
+  cause was reconciliation rebuilding the tiling trees: right after wake the
+  window server reports unstable Space assignments, so windows looked like
+  they had moved to another Space and were removed and re-inserted, losing
+  their arrangement. Two defenses now prevent this:
+  - After wake, reconciliation only re-applies the existing trees for a few
+    seconds (no structural changes), and the saved layout is re-asserted as
+    displays come back
+  - A window is only relocated to another Space when the change is confirmed
+    across two consecutive passes, so a transient glitch (wake or display
+    sleep) never triggers a rebuild
+
 ## [0.1.4] - 2026-07-24
 
 ### Fixed

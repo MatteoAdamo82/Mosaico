@@ -301,11 +301,17 @@ final class WindowManager {
     /// (unplug durante lo standby), solo allora fonde le sue finestre.
     private func handleWake() {
         MosaicoLog.log("wake dallo standby")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            guard let self, !self.isPaused else { return }
-            self.workspaceManager.syncDisplays()
-            self.workspaceManager.mergeStaleDetached()
-            self.reconcile()
+        // Per i prossimi secondi la riconciliazione non tocca la struttura:
+        // riapplica solo l'albero salvato. Query AX/space sono instabili
+        // subito dopo il wake e ricostruirebbero i tree perdendo le posizioni.
+        structuralReconcileSuppressedUntil = Date().addingTimeInterval(8)
+        // Riapplica il layout esistente più volte mentre i display tornano
+        for delay in [1.0, 2.5, 5.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, !self.isPaused else { return }
+                self.workspaceManager.syncDisplays()
+                self.retileAll()
+            }
         }
     }
 
@@ -342,10 +348,23 @@ final class WindowManager {
                 }
             }
         }
-        for id in toRemove { remove(windowID: id) }
+        for id in toRemove {
+            MosaicoLog.log("rimossa invalida [\(id)]")
+            remove(windowID: id)
+        }
     }
 
     // MARK: - Riconciliazione
+
+    /// Fino a questo istante la riconciliazione NON modifica la struttura
+    /// (niente prune/relocate/adopt): riapplica solo l'albero esistente.
+    /// Attivo dopo il wake, quando le query su AX e sugli space danno valori
+    /// instabili che porterebbero a ricostruire i tree e perdere le posizioni.
+    private var structuralReconcileSuppressedUntil = Date.distantPast
+
+    /// Finestre viste su uno space diverso una volta sola: ricollocate solo
+    /// se il cambio si conferma al passaggio successivo (anti-glitch wake).
+    private var pendingRelocations = Set<WindowID>()
 
     /// Auto-riparazione: rimuove finestre morte, ricolloca quelle spostate
     /// di space, adotta le nuove, ripristina il layout visibile.
@@ -353,25 +372,42 @@ final class WindowManager {
         guard !isPaused, started else { return }
         guard NSEvent.pressedMouseButtons == 0 else { return }
 
+        // Grace period post-wake: solo re-apply dell'albero esistente,
+        // nessuna modifica strutturale (le posizioni restano quelle salvate)
+        if Date() < structuralReconcileSuppressedUntil {
+            for screen in NSScreen.screens {
+                applyLayout(workspace: workspaceManager.activeWorkspace(for: screen), screen: screen)
+            }
+            return
+        }
+
         // 1. Rimuovi finestre morte e minimizzate
         pruneInvalidWindows()
         pruneMinimizedWindows()
 
         // 2. Ricolloca finestre spostate su un altro space nativo
-        //    (es. trascinate in Mission Control)
+        //    (es. trascinate in Mission Control). Solo se il cambio di space
+        //    è CONFERMATO su due passaggi consecutivi: subito dopo wake /
+        //    display-sleep il window server riporta space instabili, e agire
+        //    al primo colpo ricostruirebbe i tree perdendo le posizioni.
+        var currentDiffs = Set<WindowID>()
         var relocations: [(WindowID, AXWindow, String?)] = []
         for (_, display) in workspaceManager.displays {
             for (storedSpaceID, spaceState) in display.spaces {
                 for (id, managed) in spaceState.workspace.windows {
                     guard let actualSpace = SpaceTracker.space(of: id),
-                          actualSpace != storedSpaceID else { continue }
-                    let bundleID = NSRunningApplication(processIdentifier: managed.window.pid)?.bundleIdentifier
-                    relocations.append((id, managed.window, bundleID))
+                          actualSpace != 0, actualSpace != storedSpaceID else { continue }
+                    currentDiffs.insert(id)
+                    if pendingRelocations.contains(id) {   // confermato: 2° passaggio
+                        let bundleID = NSRunningApplication(processIdentifier: managed.window.pid)?.bundleIdentifier
+                        relocations.append((id, managed.window, bundleID))
+                    }
                 }
             }
         }
+        pendingRelocations = currentDiffs.subtracting(relocations.map(\.0))
         for (id, window, bundleID) in relocations {
-            MosaicoLog.log("ricolloca [\(id)] su nuovo space")
+            MosaicoLog.log("ricolloca [\(id)] su nuovo space (confermato)")
             remove(windowID: id)
             manage(window: window, bundleID: bundleID)
         }
