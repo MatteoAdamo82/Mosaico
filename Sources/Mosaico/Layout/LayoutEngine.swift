@@ -62,24 +62,17 @@ enum LayoutEngine {
             managed.window.raise()
         }
 
-        // Re-apply per i ritardatari; le "stubborn" adottano il frame reale nel ratio.
-        // Salta se nel frattempo il layout è cambiato (frame ormai stali) o se
-        // c'è un drag in corso.
+        // Re-apply per le app lente ad applicare il frame (una volta sola,
+        // 0.1s dopo). NON adotta il frame reale: se l'app snappa a una
+        // dimensione diversa (terminali su griglia di celle), la si tollera
+        // — inseguirla creerebbe un loop apply→snap→adopt. L'adozione dei
+        // resize avviene solo su azione utente (handleDragEnd).
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             guard workspace.layoutGeneration == generation,
                   NSEvent.pressedMouseButtons == 0 else { return }
             for (_, entries) in byPid {
-                for (managed, target) in entries {
-                    let actual = managed.window.frame
-                    if !rectsEqual(actual, target) {
-                        managed.window.setFrame(target)
-                        let after = managed.window.frame
-                        // Adotta solo scostamenti significativi: sotto i 6pt è
-                        // snapping dell'app, inseguirlo crea oscillazioni
-                        if !rectsEqual(after, target, tolerance: 6) {
-                            workspace.tree.adoptFrame(for: managed.id, actual: after, in: rect, gap: gap)
-                        }
-                    }
+                for (managed, target) in entries where !rectsEqual(managed.window.frame, target) {
+                    managed.window.setFrame(target)
                 }
             }
         }

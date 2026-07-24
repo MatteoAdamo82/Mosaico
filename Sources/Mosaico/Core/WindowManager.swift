@@ -21,9 +21,6 @@ final class WindowManager {
     private var focusedWindowID: WindowID?
     private var previousFocusedWindowID: WindowID?
 
-    /// Debounce dei resize/move manuali per finestra.
-    private var pendingAdjustments: [WindowID: DispatchWorkItem] = [:]
-
     private func noteFocus(_ id: WindowID) {
         guard id != focusedWindowID else { return }
         previousFocusedWindowID = focusedWindowID
@@ -258,43 +255,17 @@ final class WindowManager {
             manage(window: window, bundleID: bundleID)
 
         case kAXWindowMovedNotification, kAXWindowResizedNotification:
-            guard let window = AXWindow(element: element, pid: pid) else { return }
-            scheduleManualAdjustment(for: window)
+            // NON adottare qui: queste notifiche scattano anche quando è
+            // l'APP a ridimensionarsi (terminali che snappano alla griglia
+            // di celle), creando un loop apply→snap→adopt→apply. L'adozione
+            // da azione utente avviene solo al rilascio del mouse
+            // (handleDragEnd); la riconciliazione periodica corregge il
+            // resto. Ignora.
+            break
 
         default:
             break
         }
-    }
-
-    /// Resize/move manuale (senza modificatore): debounce, poi il resize
-    /// viene adottato nei ratio (le vicine seguono) e il move viene
-    /// riportato al layout (snap back).
-    private func scheduleManualAdjustment(for window: AXWindow) {
-        let id = window.id
-        pendingAdjustments[id]?.cancel()
-
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.pendingAdjustments[id] = nil
-            // Tasto mouse ancora premuto = drag in corso: riprova dopo
-            if NSEvent.pressedMouseButtons != 0 {
-                if let loc = self.workspaceManager.locate(id) {
-                    self.scheduleManualAdjustment(for: loc.managed.window)
-                }
-                return
-            }
-            guard !self.isPaused,
-                  !self.mouse.isDragging,
-                  let loc = self.workspaceManager.locate(id),
-                  !loc.managed.isFloating, !loc.managed.isZoomed,
-                  self.workspaceManager.isVisible(loc.workspace),
-                  let screen = DisplayManager.screen(withDisplayID: loc.display.displayID) else { return }
-
-            self.adoptDivergences(workspace: loc.workspace, screen: screen)
-        }
-
-        pendingAdjustments[id] = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
 
     private func handleFocusChange(_ window: AXWindow) {
@@ -925,9 +896,6 @@ final class WindowManager {
 
         guard let sourceLoc = workspaceManager.locate(source.id),
               !source.isFloating else { return }
-
-        pendingAdjustments[source.id]?.cancel()
-        pendingAdjustments[source.id] = nil
 
         guard let resolution = resolveDrop(source: source, at: point) else {
             MosaicoLog.log("drop [\(source.id)] nessun target → snap back")

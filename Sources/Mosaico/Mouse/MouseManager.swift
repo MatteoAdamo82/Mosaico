@@ -182,6 +182,10 @@ final class MouseManager {
             return nil
 
         case .leftMouseUp:
+            // Drag reale solo se il puntatore si è mosso: un semplice click
+            // non deve innescare adozione di resize (i terminali che snappano
+            // verrebbero adottati a ogni click).
+            let wasDrag = pressPoint.map { hypot(point.x - $0.x, point.y - $0.y) > 6 } ?? false
             pressPoint = nil
             if case .move(let managed, _) = session {
                 session = nil
@@ -197,7 +201,7 @@ final class MouseManager {
             DispatchQueue.main.async { [weak self] in
                 self?.delegate?.handlePlainDrop(at: point)
                 self?.delegate?.endDropPreview()
-                self?.delegate?.handleDragEnd()
+                if wasDrag { self?.delegate?.handleDragEnd() }
             }
             return Unmanaged.passUnretained(event)
 
