@@ -1,7 +1,7 @@
 import Foundation
 
-/// Log di debug su file: ~/Library/Application Support/Mosaico/debug.log
-/// (l'unified log non cattura in modo affidabile gli NSLog dell'app).
+/// Debug log to file: ~/Library/Application Support/Mosaico/debug.log
+/// (the unified log does not reliably capture the app's NSLog output).
 enum MosaicoLog {
     private static let url: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -16,7 +16,7 @@ enum MosaicoLog {
         return f
     }()
 
-    /// Ruota il log all'avvio dell'app.
+    /// Rotates the log at app startup.
     static func rotate() {
         let old = url.deletingPathExtension().appendingPathExtension("log.1")
         try? FileManager.default.removeItem(at: old)

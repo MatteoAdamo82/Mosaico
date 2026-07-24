@@ -1,7 +1,7 @@
 import AppKit
 
-/// Icona menubar: 3 rettangoli in proporzione aurea (come l'icona app),
-/// monocromatica template — si adatta a menubar chiara/scura.
+/// Menubar icon: 3 rectangles in golden ratio (like the app icon),
+/// monochrome template — adapts to light/dark menubar.
 enum MenuBarIcon {
     static let normal = make(alpha: 1.0)
     static let paused = make(alpha: 0.35)
@@ -11,9 +11,9 @@ enum MenuBarIcon {
         let image = NSImage(size: size, flipped: false) { _ in
             NSColor.black.withAlphaComponent(alpha).setFill()
 
-            // Canvas 16x14 centrato; colonna sinistra 61.8%, destra divisa
-            // in alto (61.8%) e basso. Coordinate intere: niente sbavature.
-            // A: sinistra 9x14 — B: destra alto 5x8 — C: destra basso 5x4
+            // Canvas 16x14 centered; left column 61.8%, right split
+            // into top (61.8%) and bottom. Integer coordinates: no smudging.
+            // A: left 9x14 — B: right top 5x8 — C: right bottom 5x4
             let a = NSRect(x: 1, y: 2, width: 9, height: 14)
             let b = NSRect(x: 12, y: 8, width: 5, height: 8)
             let c = NSRect(x: 12, y: 2, width: 5, height: 4)

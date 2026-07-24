@@ -3,11 +3,11 @@ import CAXShim
 
 typealias NativeSpaceID = UInt64
 
-/// Interroga gli Spaces nativi di macOS (Mission Control) via SPI CGS.
+/// Queries macOS native Spaces (Mission Control) via CGS SPI.
 enum SpaceTracker {
 
-    /// Space nativo attualmente visibile su ogni display.
-    /// Chiave: "Display Identifier" (UUID string, o "Main" sul principale).
+    /// Native space currently visible on each display.
+    /// Key: "Display Identifier" (UUID string, or "Main" on the primary).
     static func activeSpacesByDisplay() -> [String: NativeSpaceID] {
         guard let raw = CGSCopyManagedDisplaySpaces(CGSMainConnectionID())?.takeRetainedValue() as? [[String: Any]] else {
             return [:]
@@ -24,7 +24,7 @@ enum SpaceTracker {
         return result
     }
 
-    /// Space nativo corrente del display dato.
+    /// Current native space of the given display.
     static func currentSpace(for screen: NSScreen) -> NativeSpaceID? {
         let spaces = activeSpacesByDisplay()
         guard !spaces.isEmpty else { return nil }
@@ -35,18 +35,18 @@ enum SpaceTracker {
            let id = spaces[uuid] {
             return id
         }
-        // Il display principale a volte è identificato come "Main"
+        // The primary display is sometimes identified as "Main"
         if screen == NSScreen.screens.first, let id = spaces["Main"] {
             return id
         }
-        // Un solo display: prendi l'unico valore
+        // Only one display: take the single value
         if spaces.count == 1 { return spaces.values.first }
         return nil
     }
 
-    /// Numero ordinale (1-based) dello space corrente del display, contando
-    /// solo gli space utente (type 0, non fullscreen). Per l'indicatore menubar
-    /// e per sapere quale Ctrl+N simulare.
+    /// Ordinal number (1-based) of the display's current space, counting
+    /// only user spaces (type 0, not fullscreen). For the menubar indicator
+    /// and to know which Ctrl+N to simulate.
     static func currentSpaceOrdinal(for screen: NSScreen) -> (current: Int, total: Int)? {
         guard let raw = CGSCopyManagedDisplaySpaces(CGSMainConnectionID())?.takeRetainedValue() as? [[String: Any]] else {
             return nil
@@ -63,7 +63,7 @@ enum SpaceTracker {
         return nil
     }
 
-    /// Space nativo su cui vive una finestra.
+    /// Native space a window lives on.
     static func space(of windowID: WindowID) -> NativeSpaceID? {
         let windows = [NSNumber(value: windowID)] as CFArray
         guard let raw = CGSCopySpacesForWindows(CGSMainConnectionID(), 0x7, windows)?.takeRetainedValue() as? [NSNumber],

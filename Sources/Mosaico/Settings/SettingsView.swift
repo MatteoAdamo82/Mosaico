@@ -62,8 +62,8 @@ private struct GeneralSettingsView: View {
 
 // MARK: - Scorciatoie
 
-/// Stato UI senza @State: il toolchain CommandLineTools non espande le
-/// macro SwiftUI (SwiftUIMacros plugin assente), quindi ObservableObject.
+/// UI state without @State: the CommandLineTools toolchain does not expand
+/// SwiftUI macros (SwiftUIMacros plugin absent), hence ObservableObject.
 private final class UIState<Value>: ObservableObject {
     @Published var value: Value
     init(_ initial: Value) { value = initial }
@@ -111,7 +111,7 @@ private struct HotkeySettingsView: View {
     }
 }
 
-/// Cattura la combinazione premuta mentre `recordingID` è attivo.
+/// Captures the pressed combination while `recordingID` is active.
 private struct KeyRecorder: NSViewRepresentable {
     let recordingID: Binding<String?>
     let store: SettingsStore
@@ -156,7 +156,7 @@ private struct KeyRecorder: NSViewRepresentable {
                     self.parent.store.settings = settings
                 }
                 DispatchQueue.main.async { self.parent.recordingID.wrappedValue = nil }
-                return nil   // consuma l'evento
+                return nil   // consume the event
             }
         }
 
@@ -268,7 +268,7 @@ private struct ExclusionSettingsView: View {
 // MARK: - Display helpers
 
 extension KeyBinding {
-    /// Rappresentazione leggibile (⌃⌥⇧⌘ + tasto).
+    /// Human-readable representation (⌃⌥⇧⌘ + key).
     var displayString: String {
         var parts = ""
         if carbonModifiers & UInt32(controlKey) != 0 { parts += "⌃" }

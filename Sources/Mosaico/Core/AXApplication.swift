@@ -1,7 +1,7 @@
 import AppKit
 import ApplicationServices
 
-/// Wrapper dell'AXUIElement applicazione (per-pid).
+/// Wrapper of the application AXUIElement (per-pid).
 final class AXApplication {
     let element: AXUIElement
     let pid: pid_t
@@ -13,7 +13,7 @@ final class AXApplication {
         self.bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
     }
 
-    /// Finestre correnti dell'app (solo role AXWindow).
+    /// Current windows of the app (AXWindow role only).
     func windows() -> [AXWindow] {
         var value: CFTypeRef?
         let err = AXUIElementCopyAttributeValue(element, kAXWindowsAttribute as CFString, &value)
@@ -28,8 +28,8 @@ final class AXApplication {
         return AXWindow(element: value as! AXUIElement, pid: pid)
     }
 
-    /// Bug animazioni: se AXEnhancedUserInterface è attivo, i set-frame
-    /// vengono animati/clampati male. Da disattivare durante i batch.
+    /// Animation bug: if AXEnhancedUserInterface is active, set-frames
+    /// are animated/clamped badly. To be disabled during batches.
     var enhancedUserInterface: Bool {
         get {
             var value: CFTypeRef?
@@ -42,13 +42,13 @@ final class AXApplication {
         }
     }
 
-    /// Electron: forza la costruzione dell'albero AX quando risulta vuoto.
+    /// Electron: forces the construction of the AX tree when it is empty.
     func pokeManualAccessibility() {
         AXUIElementSetAttributeValue(element, "AXManualAccessibility" as CFString, kCFBooleanTrue)
     }
 
-    /// Verifica che l'app risponda alle richieste AX (le app appena lanciate
-    /// rispondono kAXErrorCannotComplete per un po').
+    /// Checks that the app responds to AX requests (just-launched apps
+    /// respond kAXErrorCannotComplete for a while).
     var isReady: Bool {
         var value: CFTypeRef?
         let err = AXUIElementCopyAttributeValue(element, kAXWindowsAttribute as CFString, &value)

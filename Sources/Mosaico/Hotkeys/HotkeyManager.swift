@@ -1,8 +1,8 @@
 import Carbon.HIToolbox
 import AppKit
 
-/// Hotkey globali via Carbon RegisterEventHotKey: nessun permesso extra,
-/// consuma il keystroke, rispetta Secure Input.
+/// Global hotkeys via Carbon RegisterEventHotKey: no extra permissions,
+/// consumes the keystroke, respects Secure Input.
 final class HotkeyManager {
     var onCommand: ((Command) -> Void)?
 
@@ -31,8 +31,8 @@ final class HotkeyManager {
                 hotKeyRefs.append(ref)
                 commandsByID[id] = binding.command
             } else {
-                // Collisione con un'altra app o con una scorciatoia di sistema
-                MosaicoLog.log("hotkey non registrata (\(status)): \(binding.displayString) → \(binding.command.title)")
+                // Collision with another app or with a system shortcut
+                MosaicoLog.log("hotkey not registered (\(status)): \(binding.displayString) → \(binding.command.title)")
             }
             _ = hotKeyID
         }

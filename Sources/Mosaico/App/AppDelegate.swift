@@ -4,7 +4,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboarding: PermissionsOnboarding?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // App solo-menubar anche se lanciata da `swift run` (senza Info.plist LSUIElement)
+        // Menubar-only app even when launched via `swift run` (without Info.plist LSUIElement)
         NSApp.setActivationPolicy(.accessory)
 
         MosaicoLog.rotate()

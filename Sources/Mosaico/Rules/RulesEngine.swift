@@ -6,8 +6,8 @@ enum WindowDisposition {
     case ignore
 }
 
-/// Attributi di una finestra rilevanti per la disposition: valori semplici,
-/// così la decisione è una funzione pura e self-testabile.
+/// Window attributes relevant to the disposition: simple values,
+/// so the decision is a pure and self-testable function.
 struct WindowTraits {
     var role: String?
     var subrole: String?
@@ -21,47 +21,47 @@ struct WindowTraits {
     var cgLayer = 0
 }
 
-/// Decide come trattare una finestra: tile, float o ignora.
-/// Port di float-system-windows.sh + esclusioni + euristiche PiP.
+/// Decides how to treat a window: tile, float or ignore.
+/// Port of float-system-windows.sh + exclusions + PiP heuristics.
 enum RulesEngine {
 
-    /// Titoli delle finestre Picture-in-Picture nei vari browser/lingue.
+    /// Titles of Picture-in-Picture windows across the various browsers/languages.
     static let pipTitles: Set<String> = [
         "Picture in Picture", "Picture-in-Picture", "Immagine nell'immagine",
     ]
 
-    /// Decisione pura sui soli attributi.
+    /// Pure decision based on attributes only.
     static func disposition(traits: WindowTraits,
                             excludedBundleIDs: [String],
                             excludedWindowRules: [WindowRule]) -> WindowDisposition {
-        // App esclusa dal tiling
+        // App excluded from tiling
         if let bundleID = traits.bundleID, excludedBundleIDs.contains(bundleID) {
             return .ignore
         }
 
-        // Regola per finestra specifica (esclusa dall'utente via menu)
+        // Rule for a specific window (excluded by the user via menu)
         if let bundleID = traits.bundleID, let title = traits.title,
            excludedWindowRules.contains(where: { $0.bundleID == bundleID && $0.title == title }) {
             return .ignore
         }
 
-        // Finestre flottanti di sistema (PiP, palette always-on-top):
-        // layer CGWindow ≠ 0 → mai tilare
+        // System floating windows (PiP, always-on-top palettes):
+        // CGWindow layer ≠ 0 → never tile
         if traits.cgLayer != 0 {
             return .ignore
         }
 
-        // PiP che (in alcune app) sta a layer 0: riconoscilo dal titolo
+        // PiP that (in some apps) sits at layer 0: recognize it by title
         if let title = traits.title, pipTitles.contains(title) {
             return .ignore
         }
 
-        // Sheet/dialog agganciati a un'altra finestra: mai nel tree
+        // Sheets/dialogs attached to another window: never in the tree
         if traits.hasWindowParent {
             return .ignore
         }
 
-        // Fullscreen nativo: escluso finché attivo
+        // Native fullscreen: excluded while active
         if traits.isFullscreen {
             return .ignore
         }
@@ -70,7 +70,7 @@ enum RulesEngine {
             return .ignore
         }
 
-        // Port di float-system-windows.sh
+        // Port of float-system-windows.sh
         let role = traits.role ?? ""
         let subrole = traits.subrole ?? ""
 
@@ -82,12 +82,12 @@ enum RulesEngine {
         case "AXDialog", "AXSystemDialog", "AXFloatingWindow":
             return .float
         case "AXStandardWindow":
-            // Finestra a dimensione fissa o non spostabile (popup, palette,
-            // finestre transitorie): float — tilarle strizza le altre per nulla
+            // Fixed-size or non-movable window (popups, palettes,
+            // transient windows): float — tiling them squeezes the others for nothing
             guard traits.isResizable, traits.isMovable else { return .float }
             return .tile
         default:
-            // Subrole vuoto o sconosciuto: float se anche role è vuoto o AXSheet
+            // Empty or unknown subrole: float if role is also empty or AXSheet
             if role.isEmpty || subrole == "AXSheet" {
                 return .float
             }
@@ -95,7 +95,7 @@ enum RulesEngine {
         }
     }
 
-    /// Wrapper: legge gli attributi dalla finestra reale e decide.
+    /// Wrapper: reads the attributes from the real window and decides.
     static func disposition(for window: AXWindow, bundleID: String?) -> WindowDisposition {
         let settings = SettingsStore.shared.settings
         let traits = WindowTraits(role: window.role,

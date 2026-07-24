@@ -1,6 +1,6 @@
 import AppKit
 
-/// Notifiche NSWorkspace: lancio/chiusura/attivazione app e cambi display.
+/// NSWorkspace notifications: app launch/termination/activation and display changes.
 final class AppLifecycleObserver {
     var onAppLaunched: ((NSRunningApplication) -> Void)?
     var onAppTerminated: ((NSRunningApplication) -> Void)?
@@ -37,13 +37,13 @@ final class AppLifecycleObserver {
             self?.onDisplaysChanged?()
         })
 
-        // Cambio di space nativo (Mission Control / Ctrl+freccia)
+        // Native space change (Mission Control / Ctrl+arrow)
         tokens.append(wsCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
                                            object: nil, queue: .main) { [weak self] _ in
             self?.onSpaceChanged?()
         })
 
-        // Risveglio dallo standby
+        // Wake from standby
         tokens.append(wsCenter.addObserver(forName: NSWorkspace.didWakeNotification,
                                            object: nil, queue: .main) { [weak self] _ in
             self?.onWake?()

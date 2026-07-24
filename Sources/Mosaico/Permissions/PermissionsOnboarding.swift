@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Mostra la finestra di onboarding finché il permesso Accessibility non viene
-/// concesso, poi chiama `onGranted` (senza bisogno di riavviare l'app).
+/// Shows the onboarding window until the Accessibility permission is
+/// granted, then calls `onGranted` (without needing to restart the app).
 final class PermissionsOnboarding {
     private let onGranted: () -> Void
     private var window: NSWindow?
@@ -13,7 +13,7 @@ final class PermissionsOnboarding {
     }
 
     func begin() {
-        // Prompt di sistema (una volta sola)
+        // System prompt (only once)
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
 

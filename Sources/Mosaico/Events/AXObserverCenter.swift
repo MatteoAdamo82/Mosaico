@@ -1,8 +1,8 @@
 import AppKit
 import ApplicationServices
 
-/// Un AXObserver per app; tutte le notifiche confluiscono nel main run loop
-/// e vengono inoltrate al WindowManager.
+/// One AXObserver per app; all notifications converge on the main run loop
+/// and are forwarded to the WindowManager.
 final class AXObserverCenter {
     static let appNotifications: [String] = [
         kAXWindowCreatedNotification,

@@ -3,8 +3,8 @@ import SwiftUI
 @main
 enum Main {
     static func main() {
-        // XCTest assente con soli CommandLineTools: i test del BSP tree
-        // girano in-process con `.build/debug/Mosaico --selftest`
+        // XCTest is absent with only CommandLineTools: the BSP tree tests
+        // run in-process with `.build/debug/Mosaico --selftest`
         if CommandLine.arguments.contains("--selftest") {
             SelfTest.run()
             exit(0)
@@ -25,7 +25,7 @@ struct MosaicoApp: App {
         MenuBarExtra {
             MenuContent()
         } label: {
-            // Mini-mosaico aureo; attenuato quando il tiling è in pausa
+            // Golden-ratio mini-mosaic; dimmed when tiling is paused
             Image(nsImage: menuState.isPaused ? MenuBarIcon.paused : MenuBarIcon.normal)
         }
         .menuBarExtraStyle(.menu)

@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Menu della menubar — stessa struttura di YabaiMenu, ma ogni azione
-/// chiama il WindowManager in-process invece di shellare su yabai.
+/// Menubar menu — same structure as YabaiMenu, but each action
+/// calls the WindowManager in-process instead of shelling out to yabai.
 struct MenuContent: View {
     @ObservedObject private var menuState = MenuState.shared
 
@@ -60,7 +60,7 @@ struct MenuContent: View {
 
         Section("Mosaico") {
             Menu("Escludi finestra") {
-                // ✓ = esclusa dal tiling; clicca per invertire
+                // ✓ = excluded from tiling; click to toggle
                 ForEach(menuState.windows) { info in
                     Button("\(info.isExcluded ? "✓" : "　")  \(info.appName) — \(info.title)") {
                         WindowManager.shared.toggleExclusion(info.id)

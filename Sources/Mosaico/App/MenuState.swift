@@ -1,8 +1,8 @@
 import Combine
 
-/// Stato osservabile per la menubar. Il contenuto della MenuBarExtra viene
-/// rivalutato SOLO quando cambia stato osservato: tutto ciò che il menu
-/// mostra deve passare da qui.
+/// Observable state for the menubar. The MenuBarExtra content is
+/// re-evaluated ONLY when observed state changes: everything the menu
+/// displays must go through here.
 final class MenuState: ObservableObject {
     static let shared = MenuState()
     @Published var isPaused: Bool = false

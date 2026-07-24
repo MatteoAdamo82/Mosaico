@@ -1,15 +1,15 @@
 import AppKit
 
-/// Applica i frame calcolati dal BSPTree alle finestre reali.
+/// Applies the frames computed by the BSPTree to the real windows.
 enum LayoutEngine {
 
-    /// Rect utile del workspace: visibleFrame − padding.
+    /// Usable workspace rect: visibleFrame − padding.
     static func workspaceRect(for screen: NSScreen) -> CGRect {
         let padding = CGFloat(SettingsStore.shared.settings.padding)
         return DisplayManager.axVisibleFrame(of: screen).insetBy(dx: padding, dy: padding)
     }
 
-    /// Frame float di default: grid 4:4:1:1:2:2 (centrata, metà larghezza/altezza).
+    /// Default float frame: grid 4:4:1:1:2:2 (centered, half width/height).
     static func floatFrame(for screen: NSScreen) -> CGRect {
         let rect = workspaceRect(for: screen)
         return CGRect(x: rect.origin.x + rect.width / 4,
@@ -18,9 +18,9 @@ enum LayoutEngine {
                       height: rect.height / 2)
     }
 
-    /// Applica il layout del workspace sul display. Disattiva temporaneamente
-    /// AXEnhancedUserInterface per app coinvolte (bug animazioni), poi un
-    /// re-apply ritardato per le finestre che non hanno obbedito.
+    /// Applies the workspace layout on the display. Temporarily disables
+    /// AXEnhancedUserInterface for the apps involved (animation bug), then a
+    /// delayed re-apply for the windows that did not comply.
     static func apply(workspace: Workspace, on screen: NSScreen) {
         let rect = workspaceRect(for: screen)
         let gap = CGFloat(SettingsStore.shared.settings.gap)
@@ -55,18 +55,18 @@ enum LayoutEngine {
             MosaicoLog.log("apply gen=\(generation) set=\(changed)")
         }
 
-        // Le float (dialog, finestre a dimensione fissa) restano SOPRA le
-        // tiled — altrimenti spariscono dietro il tiling che copre tutto
-        // lo schermo (comportamento i3-style)
+        // Floats (dialogs, fixed-size windows) stay ABOVE the tiled ones —
+        // otherwise they disappear behind the tiling that covers the whole
+        // screen (i3-style behavior)
         for (_, managed) in workspace.windows where managed.isFloating {
             managed.window.raise()
         }
 
-        // Re-apply per le app lente ad applicare il frame (una volta sola,
-        // 0.1s dopo). NON adotta il frame reale: se l'app snappa a una
-        // dimensione diversa (terminali su griglia di celle), la si tollera
-        // — inseguirla creerebbe un loop apply→snap→adopt. L'adozione dei
-        // resize avviene solo su azione utente (handleDragEnd).
+        // Re-apply for apps slow to apply the frame (only once, 0.1s later).
+        // Does NOT adopt the real frame: if the app snaps to a different
+        // size (terminals on a cell grid), it is tolerated — chasing it
+        // would create an apply→snap→adopt loop. Resize adoption happens
+        // only on user action (handleDragEnd).
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             guard workspace.layoutGeneration == generation,
                   NSEvent.pressedMouseButtons == 0 else { return }

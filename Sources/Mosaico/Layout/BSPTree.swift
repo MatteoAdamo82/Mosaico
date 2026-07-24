@@ -1,13 +1,13 @@
 import CoreGraphics
 
 enum Orientation {
-    case horizontal   // figli affiancati (split verticale dello spazio: first sinistra, second destra)
-    case vertical     // figli impilati (first sopra, second sotto)
+    case horizontal   // children side by side (vertical split of the space: first left, second right)
+    case vertical     // children stacked (first top, second bottom)
 
     var flipped: Orientation { self == .horizontal ? .vertical : .horizontal }
 }
 
-/// Nodo dell'albero BSP. Reference type con parent pointer: semplifica
+/// BSP tree node. Reference type with parent pointer: simplifies
 /// remove/swap/warp/neighbor.
 final class BSPNode {
     weak var parent: BSPNode?
@@ -15,7 +15,7 @@ final class BSPNode {
     var ratio: CGFloat = 0.5
     var first: BSPNode?
     var second: BSPNode?
-    var windowID: WindowID?    // solo foglie
+    var windowID: WindowID?    // leaves only
 
     var isLeaf: Bool { windowID != nil }
 
@@ -33,9 +33,9 @@ final class BSPNode {
     }
 }
 
-/// Albero BSP di un workspace. Replica la semantica yabai:
-/// insert = split della foglia focused, nuova finestra come second_child,
-/// orientamento scelto dal lato lungo del rect della foglia.
+/// BSP tree of a workspace. Replicates yabai semantics:
+/// insert = split of the focused leaf, new window as second_child,
+/// orientation chosen from the long side of the leaf's rect.
 final class BSPTree {
     private(set) var root: BSPNode?
 
@@ -53,11 +53,11 @@ final class BSPTree {
         leaf(for: id) != nil
     }
 
-    // MARK: - Mutazioni
+    // MARK: - Mutations
 
-    /// Inserisce vicino alla foglia `near` (di norma la finestra focused);
-    /// se nil, vicino all'ultima foglia. `rect` della foglia serve a
-    /// scegliere l'orientamento (lato lungo).
+    /// Inserts next to leaf `near` (usually the focused window);
+    /// if nil, next to the last leaf. The leaf's `rect` is used to
+    /// choose the orientation (long side).
     func insert(_ id: WindowID, near: WindowID?, leafRect: (WindowID) -> CGRect?) {
         guard let root else {
             self.root = BSPNode(windowID: id)
@@ -73,7 +73,7 @@ final class BSPTree {
         let rect = leafRect(target.windowID!) ?? .zero
         let orientation: Orientation = rect.width >= rect.height ? .horizontal : .vertical
 
-        // second_child: la nuova finestra è `second` (destra o sotto)
+        // second_child: the new window is `second` (right or bottom)
         target.windowID = nil
         target.orientation = orientation
         target.ratio = 0.5
@@ -90,7 +90,7 @@ final class BSPTree {
             return
         }
         let sibling = (parent.first === node) ? parent.second! : parent.first!
-        // Il sibling prende il posto del parent
+        // The sibling takes the parent's place
         parent.windowID = sibling.windowID
         parent.orientation = sibling.orientation
         parent.ratio = sibling.ratio
@@ -106,8 +106,8 @@ final class BSPTree {
         lb.windowID = a
     }
 
-    /// Warp: rimuove `id` e lo re-inserisce splittando la foglia `target`.
-    /// La direzione decide orientamento dello split e ordine dei figli.
+    /// Warp: removes `id` and re-inserts it by splitting leaf `target`.
+    /// The direction decides the split orientation and the order of the children.
     func warp(_ id: WindowID, onto target: WindowID, direction: Direction) {
         guard id != target, contains(id), let _ = leaf(for: target) else { return }
         remove(id)
@@ -128,9 +128,9 @@ final class BSPTree {
         targetLeaf.second?.parent = targetLeaf
     }
 
-    /// Rotazione 270° (antiorario, come yabai --rotate 270).
-    /// [A|B] orizzontale → B sopra, A sotto (swap + ratio invertito);
-    /// A sopra B verticale → [A|B] orizzontale (invariati).
+    /// 270° rotation (counterclockwise, like yabai --rotate 270).
+    /// [A|B] horizontal → B on top, A on bottom (swap + inverted ratio);
+    /// A above B vertical → [A|B] horizontal (unchanged).
     func rotate270() {
         walkSplits { node in
             if node.orientation == .horizontal {
@@ -145,7 +145,7 @@ final class BSPTree {
         }
     }
 
-    /// Specchia lungo l'asse Y (scambia sinistra/destra).
+    /// Mirrors along the Y axis (swaps left/right).
     func mirrorY() {
         walkSplits { node in
             guard node.orientation == .horizontal else { return }
@@ -156,7 +156,7 @@ final class BSPTree {
         }
     }
 
-    /// Specchia lungo l'asse X (scambia sopra/sotto).
+    /// Mirrors along the X axis (swaps top/bottom).
     func mirrorX() {
         walkSplits { node in
             guard node.orientation == .vertical else { return }
@@ -173,7 +173,7 @@ final class BSPTree {
 
     // MARK: - Layout
 
-    /// Calcola i frame delle foglie dentro `rect`, con `gap` tra i figli.
+    /// Computes the leaf frames inside `rect`, with `gap` between children.
     func frames(in rect: CGRect, gap: CGFloat) -> [WindowID: CGRect] {
         var result: [WindowID: CGRect] = [:]
         guard let root else { return result }
@@ -193,7 +193,7 @@ final class BSPTree {
         computeFrames(node: second, rect: secondRect, gap: gap, into: &result)
     }
 
-    // MARK: - Ricerca
+    // MARK: - Search
 
     func leaf(for id: WindowID) -> BSPNode? {
         var found: BSPNode?
@@ -201,11 +201,11 @@ final class BSPTree {
         return found
     }
 
-    /// Adotta un frame reale nei ratio dell'albero, tenendo conto di QUALE
-    /// bordo è stato trascinato: il divisore che si muove è quello dal lato
-    /// del bordo, così lo spazio liberato lo assorbono le finestre da quel
-    /// lato. Se da quel lato non c'è nessun divisore (bordo dello schermo),
-    /// fallback sul divisore più vicino dall'altro lato.
+    /// Adopts a real frame into the tree's ratios, accounting for WHICH
+    /// edge was dragged: the divider that moves is the one on the edge's
+    /// side, so the freed space is absorbed by the windows on that side.
+    /// If there is no divider on that side (screen edge), fall back to the
+    /// nearest divider on the other side.
     func adoptFrame(for id: WindowID, actual: CGRect, in rect: CGRect, gap: CGFloat) {
         guard let leafNode = leaf(for: id), let root else { return }
         let current = frames(in: rect, gap: gap)
@@ -213,8 +213,8 @@ final class BSPTree {
 
         let dw = actual.width - expected.width
         if abs(dw) > 1 {
-            // Bordo sinistro mosso → serve il divisore a sinistra, cioè un
-            // antenato dove il nostro sottoalbero è il SECOND child.
+            // Left edge moved → we need the divider on the left, i.e. an
+            // ancestor where our subtree is the SECOND child.
             let leadingMoved = abs(actual.minX - expected.minX) > 1
             let trailingMoved = abs(actual.maxX - expected.maxX) > 1
             let wantSecondChild: Bool? = (leadingMoved && !trailingMoved) ? true
@@ -241,8 +241,8 @@ final class BSPTree {
                             rect: CGRect, gap: CGFloat) {
         guard abs(delta) > 1 else { return }
 
-        // Risali cercando un antenato con l'asse giusto E il lato giusto
-        // (se richiesto); il primo con l'asse giusto fa da fallback.
+        // Walk up looking for an ancestor with the right axis AND the right
+        // side (if required); the first with the right axis acts as fallback.
         var child: BSPNode = leafNode
         var ancestor = leafNode.parent
         var fallback: (split: BSPNode, child: BSPNode)?
@@ -272,7 +272,7 @@ final class BSPTree {
         split.ratio = max(0.1, min(0.9, newFirstSpan / usable))
     }
 
-    /// Rect di un nodo interno (stessa geometria di computeFrames).
+    /// Rect of an internal node (same geometry as computeFrames).
     private func nodeRect(of target: BSPNode, node: BSPNode, rect: CGRect, gap: CGFloat) -> CGRect? {
         if node === target { return rect }
         guard let first = node.first, let second = node.second else { return nil }

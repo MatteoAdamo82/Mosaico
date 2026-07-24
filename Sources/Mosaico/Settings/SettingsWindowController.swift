@@ -1,9 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// Finestra Impostazioni gestita direttamente: la scene `Settings` di SwiftUI
-/// si apre solo tramite selettori SPI (`showSettingsWindow:`) inaffidabili in
-/// un'app solo-menubar.
+/// Settings window managed directly: SwiftUI's `Settings` scene opens
+/// only via SPI selectors (`showSettingsWindow:`) that are unreliable in
+/// a menubar-only app.
 final class SettingsWindowController {
     static let shared = SettingsWindowController()
 

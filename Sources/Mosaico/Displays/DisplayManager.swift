@@ -1,19 +1,19 @@
 import AppKit
 
-/// Conversioni di coordinate e interrogazione display.
+/// Coordinate conversions and display querying.
 ///
-/// Convenzione interna di Mosaico: TUTTO in coordinate AX/CG (origine in alto
-/// a sinistra dello schermo primario, Y cresce verso il basso) — le stesse di
-/// kAXPositionAttribute e CGWindowList. NSScreen usa origine in basso a
-/// sinistra: convertire SOLO qui.
+/// Mosaico internal convention: EVERYTHING in AX/CG coordinates (origin at the
+/// top-left of the primary screen, Y grows downward) — the same as
+/// kAXPositionAttribute and CGWindowList. NSScreen uses a bottom-left origin:
+/// convert ONLY here.
 enum DisplayManager {
 
-    /// Altezza dello schermo primario in coordinate Cocoa (serve per il flip Y).
+    /// Height of the primary screen in Cocoa coordinates (needed for the Y flip).
     private static var primaryHeight: CGFloat {
         NSScreen.screens.first?.frame.maxY ?? 0
     }
 
-    /// NSScreen.frame (Cocoa) → rect in coordinate AX.
+    /// NSScreen.frame (Cocoa) → rect in AX coordinates.
     static func axRect(fromCocoa rect: CGRect) -> CGRect {
         CGRect(x: rect.origin.x,
                y: primaryHeight - rect.maxY,
@@ -21,8 +21,8 @@ enum DisplayManager {
                height: rect.height)
     }
 
-    /// Rect AX → coordinate Cocoa (per NSWindow). La trasformazione è
-    /// involutiva: stessa formula.
+    /// Rect AX → Cocoa coordinates (for NSWindow). The transform is
+    /// involutive: same formula.
     static func cocoaRect(fromAX rect: CGRect) -> CGRect {
         CGRect(x: rect.origin.x,
                y: primaryHeight - rect.maxY,
@@ -30,27 +30,27 @@ enum DisplayManager {
                height: rect.height)
     }
 
-    /// Frame completo del display in coordinate AX.
+    /// Full display frame in AX coordinates.
     static func axFrame(of screen: NSScreen) -> CGRect {
         axRect(fromCocoa: screen.frame)
     }
 
-    /// visibleFrame (senza menubar/Dock) in coordinate AX.
+    /// visibleFrame (without menubar/Dock) in AX coordinates.
     static func axVisibleFrame(of screen: NSScreen) -> CGRect {
         axRect(fromCocoa: screen.visibleFrame)
     }
 
-    /// Display che contiene il punto (coordinate AX); fallback: primario.
+    /// Display containing the point (AX coordinates); fallback: primary.
     static func screen(containingAX point: CGPoint) -> NSScreen? {
         NSScreen.screens.first { axFrame(of: $0).contains(point) } ?? NSScreen.screens.first
     }
 
-    /// Display che contiene il centro del rect AX.
+    /// Display containing the center of the AX rect.
     static func screen(containingAX rect: CGRect) -> NSScreen? {
         screen(containingAX: CGPoint(x: rect.midX, y: rect.midY))
     }
 
-    /// Identificatore stabile del display.
+    /// Stable display identifier.
     static func displayID(of screen: NSScreen) -> CGDirectDisplayID {
         (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
     }
@@ -59,10 +59,10 @@ enum DisplayManager {
         NSScreen.screens.first { displayID(of: $0) == id }
     }
 
-    /// Display adiacente nella direzione data. Se nessun display sta in
-    /// quella direzione (es. monitor impilati e direzione ovest/est), cicla
-    /// tra i display in ordine spaziale: i comandi restano utilizzabili con
-    /// qualsiasi disposizione.
+    /// Adjacent display in the given direction. If no display is in that
+    /// direction (e.g. stacked monitors and west/east direction), it cycles
+    /// through the displays in spatial order: the commands stay usable with
+    /// any arrangement.
     static func screen(_ direction: Direction, of screen: NSScreen) -> NSScreen? {
         let origin = axFrame(of: screen)
         let candidates = NSScreen.screens.filter { $0 != screen }
@@ -89,7 +89,7 @@ enum DisplayManager {
         }
         if let geometric { return geometric }
 
-        // Fallback: ordina per posizione (x, poi y) e cicla
+        // Fallback: sort by position (x, then y) and cycle
         let ordered = NSScreen.screens.sorted {
             let a = axFrame(of: $0), b = axFrame(of: $1)
             return a.midX != b.midX ? a.midX < b.midX : a.midY < b.midY

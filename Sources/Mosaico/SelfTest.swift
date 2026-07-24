@@ -1,8 +1,8 @@
 import CoreGraphics
 import Foundation
 
-/// Test del BSPTree e del preset hotkey, eseguiti con `Mosaico --selftest`.
-/// (XCTest non è disponibile con i soli CommandLineTools.)
+/// Tests for the BSPTree and the hotkey preset, run with `Mosaico --selftest`.
+/// (XCTest is not available with only CommandLineTools.)
 enum SelfTest {
     private static var failures = 0
 
@@ -31,7 +31,7 @@ enum SelfTest {
             check(frames[1]!.origin.x == 0 && frames[2]!.origin.x == 500, "insert second_child")
         }
 
-        // Orientamento dal lato lungo: foglia 500x600 → split verticale
+        // Orientation from the long side: 500x600 leaf → vertical split
         do {
             let tree = BSPTree()
             tree.insert(1, near: nil, leafRect: liveRect(tree))
@@ -39,17 +39,17 @@ enum SelfTest {
             tree.insert(3, near: 2, leafRect: liveRect(tree))
             let frames = tree.frames(in: rect, gap: 0)
             check(frames[2]!.origin.y == 0 && frames[3]!.origin.y == 300 && frames[3]!.origin.x == 500,
-                  "orientamento lato lungo")
+                  "long side orientation")
         }
 
-        // Remove promuove il sibling
+        // Remove promotes the sibling
         do {
             let tree = BSPTree()
             tree.insert(1, near: nil, leafRect: liveRect(tree))
             tree.insert(2, near: 1, leafRect: liveRect(tree))
             tree.remove(1)
             let frames = tree.frames(in: rect, gap: 0)
-            check(frames.count == 1 && frames[2] == rect, "remove promuove sibling")
+            check(frames.count == 1 && frames[2] == rect, "remove promotes sibling")
         }
 
         // Swap
@@ -63,7 +63,7 @@ enum SelfTest {
             check(before[1] == after[2] && before[2] == after[1], "swap")
         }
 
-        // Warp west: 3 a sinistra di 1, 2 tutta la colonna destra
+        // Warp west: 3 to the left of 1, 2 the whole right column
         do {
             let tree = BSPTree()
             tree.insert(1, near: nil, leafRect: liveRect(tree))
@@ -74,7 +74,7 @@ enum SelfTest {
             check(frames[3]!.origin.x < frames[1]!.origin.x && frames[2]!.height == 600, "warp west")
         }
 
-        // Rotate 270: [1 | 2] → 2 sopra, 1 sotto
+        // Rotate 270: [1 | 2] → 2 on top, 1 below
         do {
             let tree = BSPTree()
             tree.insert(1, near: nil, leafRect: liveRect(tree))
@@ -115,22 +115,22 @@ enum SelfTest {
                   frames[1]!.width + frames[2]!.width == 990, "gap")
         }
 
-        // Adozione edge-aware: [1 | 2], trascino il bordo SINISTRO di 2
-        // verso destra → lo spazio lo prende 1 (a sinistra)
+        // Edge-aware adoption: [1 | 2], I drag the LEFT edge of 2
+        // to the right → the space is taken by 1 (on the left)
         do {
             let tree = BSPTree()
             tree.insert(1, near: nil, leafRect: liveRect(tree))
             tree.insert(2, near: 1, leafRect: liveRect(tree))
-            // 2 era a x=500 w=500; ora x=600 w=400 (bordo sinistro spostato)
+            // 2 was at x=500 w=500; now x=600 w=400 (left edge moved)
             tree.adoptFrame(for: 2, actual: CGRect(x: 600, y: 0, width: 400, height: 600),
                             in: rect, gap: 0)
             let frames = tree.frames(in: rect, gap: 0)
             check(abs(frames[1]!.width - 600) < 1 && abs(frames[2]!.width - 400) < 1,
-                  "adozione bordo sinistro → assorbe la finestra a sinistra")
+                  "left edge adoption → absorbs the window on the left")
         }
 
-        // Adozione edge-aware: [1 | 2], trascino il bordo DESTRO di 1
-        // verso sinistra → lo spazio lo prende 2 (a destra)
+        // Edge-aware adoption: [1 | 2], I drag the RIGHT edge of 1
+        // to the left → the space is taken by 2 (on the right)
         do {
             let tree = BSPTree()
             tree.insert(1, near: nil, leafRect: liveRect(tree))
@@ -139,11 +139,11 @@ enum SelfTest {
                             in: rect, gap: 0)
             let frames = tree.frames(in: rect, gap: 0)
             check(abs(frames[2]!.width - 600) < 1 && abs(frames[2]!.origin.x - 400) < 1,
-                  "adozione bordo destro → assorbe la finestra a destra")
+                  "right edge adoption → absorbs the window on the right")
         }
 
-        // Fallback bordo schermo: [1 | 2], trascino il bordo SINISTRO di 1
-        // (non c'è nessuno a sinistra) → reagisce comunque il divisore destro
+        // Screen edge fallback: [1 | 2], I drag the LEFT edge of 1
+        // (there is nobody on the left) → the right divider reacts anyway
         do {
             let tree = BSPTree()
             tree.insert(1, near: nil, leafRect: liveRect(tree))
@@ -152,11 +152,11 @@ enum SelfTest {
                             in: rect, gap: 0)
             let frames = tree.frames(in: rect, gap: 0)
             check(abs(frames[1]!.width - 400) < 1 && abs(frames[2]!.width - 600) < 1,
-                  "adozione fallback bordo schermo")
+                  "screen edge fallback adoption")
         }
 
-        // Edge-aware annidato: [1 | 2 | 3] (3 warpato a est di 2), bordo
-        // sinistro di 3 mosso a destra → assorbe 2, non 1
+        // Nested edge-aware: [1 | 2 | 3] (3 warped east of 2), left
+        // edge of 3 moved right → absorbs 2, not 1
         do {
             let tree = BSPTree()
             tree.insert(1, near: nil, leafRect: liveRect(tree))
@@ -164,7 +164,7 @@ enum SelfTest {
             tree.insert(3, near: 2, leafRect: liveRect(tree))
             tree.warp(3, onto: 2, direction: .east)
             let before = tree.frames(in: rect, gap: 0)
-            // 3 occupa il quarto destro? verifica poi muovi il bordo sinistro di +50
+            // Does 3 occupy the right quarter? verify, then move the left edge by +50
             var moved = before[3]!
             moved.origin.x += 50
             moved.size.width -= 50
@@ -172,17 +172,17 @@ enum SelfTest {
             let after = tree.frames(in: rect, gap: 0)
             check(abs(after[2]!.width - (before[2]!.width + 50)) < 1 &&
                   abs(after[1]!.width - before[1]!.width) < 1,
-                  "adozione annidata → assorbe il vicino giusto")
+                  "nested adoption → absorbs the correct neighbor")
         }
 
-        // Adozione asse verticale: 1 sopra 2 (dopo rotate), bordo basso di 1
+        // Vertical axis adoption: 1 above 2 (after rotate), bottom edge of 1
         do {
             let tree = BSPTree()
             tree.insert(1, near: nil, leafRect: liveRect(tree))
             tree.insert(2, near: 1, leafRect: liveRect(tree))
-            tree.rotate270()   // 2 sopra, 1 sotto
+            tree.rotate270()   // 2 on top, 1 below
             let before = tree.frames(in: rect, gap: 0)
-            // Alzo il bordo superiore di 1 (che confina con 2) di 60
+            // Raise the top edge of 1 (which borders 2) by 60
             var moved = before[1]!
             moved.origin.y -= 60
             moved.size.height += 60
@@ -190,10 +190,10 @@ enum SelfTest {
             let after = tree.frames(in: rect, gap: 0)
             check(abs(after[1]!.height - (before[1]!.height + 60)) < 1 &&
                   abs(after[2]!.height - (before[2]!.height - 60)) < 1,
-                  "adozione asse verticale")
+                  "vertical axis adoption")
         }
 
-        // Warp nelle 4 direzioni
+        // Warp in the 4 directions
         do {
             func warped(_ direction: Direction) -> [WindowID: CGRect] {
                 let tree = BSPTree()
@@ -213,22 +213,22 @@ enum SelfTest {
             check(south[3]!.minY > south[1]!.minY, "warp south")
         }
 
-        // Drop zone: centro → swap, metà → warp con evidenza corretta
+        // Drop zone: center → swap, half → warp with correct highlight
         do {
             let frame = CGRect(x: 100, y: 100, width: 400, height: 300)
             let center = DropZone.resolve(point: CGPoint(x: 300, y: 250), in: frame)
-            check(center.kind == .swap && center.highlight == frame, "drop zone centro → swap")
+            check(center.kind == .swap && center.highlight == frame, "drop zone center → swap")
 
             let west = DropZone.resolve(point: CGPoint(x: 120, y: 250), in: frame)
             check(west.kind == .warp(.west) && west.highlight.width == 200 && west.highlight.minX == 100,
-                  "drop zone sinistra → warp west")
+                  "drop zone left → warp west")
 
             let south = DropZone.resolve(point: CGPoint(x: 300, y: 390), in: frame)
             check(south.kind == .warp(.south) && south.highlight.minY == 250,
-                  "drop zone bassa → warp south")
+                  "drop zone bottom → warp south")
         }
 
-        // Regole di disposition (funzione pura)
+        // Disposition rules (pure function)
         do {
             func traits(_ mutate: (inout WindowTraits) -> Void) -> WindowTraits {
                 var t = WindowTraits(role: "AXWindow", subrole: "AXStandardWindow")
@@ -238,31 +238,31 @@ enum SelfTest {
             func disp(_ t: WindowTraits, apps: [String] = [], rules: [WindowRule] = []) -> WindowDisposition {
                 RulesEngine.disposition(traits: t, excludedBundleIDs: apps, excludedWindowRules: rules)
             }
-            check(disp(traits { _ in }) == .tile, "regole: standard → tile")
-            check(disp(traits { $0.subrole = "AXDialog" }) == .float, "regole: dialog → float")
-            check(disp(traits { $0.isResizable = false }) == .float, "regole: non-resizable → float")
-            check(disp(traits { $0.cgLayer = 3 }) == .ignore, "regole: layer flottante → ignore")
-            check(disp(traits { $0.title = "Picture in Picture" }) == .ignore, "regole: PiP → ignore")
-            check(disp(traits { $0.bundleID = "com.x" }, apps: ["com.x"]) == .ignore, "regole: app esclusa → ignore")
+            check(disp(traits { _ in }) == .tile, "rules: standard → tile")
+            check(disp(traits { $0.subrole = "AXDialog" }) == .float, "rules: dialog → float")
+            check(disp(traits { $0.isResizable = false }) == .float, "rules: non-resizable → float")
+            check(disp(traits { $0.cgLayer = 3 }) == .ignore, "rules: floating layer → ignore")
+            check(disp(traits { $0.title = "Picture in Picture" }) == .ignore, "rules: PiP → ignore")
+            check(disp(traits { $0.bundleID = "com.x" }, apps: ["com.x"]) == .ignore, "rules: excluded app → ignore")
             check(disp(traits { $0.bundleID = "com.x"; $0.title = "T" },
                        rules: [WindowRule(bundleID: "com.x", title: "T")]) == .ignore,
-                  "regole: finestra esclusa → ignore")
-            check(disp(traits { $0.hasWindowParent = true }) == .ignore, "regole: sheet agganciato → ignore")
+                  "rules: excluded window → ignore")
+            check(disp(traits { $0.hasWindowParent = true }) == .ignore, "rules: attached sheet → ignore")
         }
 
-        // Rendering scorciatoie
+        // Shortcut rendering
         do {
             let binding = KeyBinding.defaultPreset.first { $0.command == .rotate }!
-            check(binding.displayString == "⌥⇧R", "displayString ⌥⇧R per rotate")
+            check(binding.displayString == "⌥⇧R", "displayString ⌥⇧R for rotate")
         }
 
-        // Preset senza duplicati
+        // Preset without duplicates
         do {
             let keys = KeyBinding.defaultPreset.map { "\($0.keyCode)-\($0.carbonModifiers)" }
-            check(keys.count == Set(keys).count, "preset hotkey senza duplicati")
+            check(keys.count == Set(keys).count, "hotkey preset without duplicates")
         }
 
-        print(failures == 0 ? "\nTUTTI I TEST PASSANO" : "\n\(failures) TEST FALLITI")
+        print(failures == 0 ? "\nALL TESTS PASS" : "\n\(failures) TESTS FAILED")
         if failures > 0 { exit(1) }
     }
 }

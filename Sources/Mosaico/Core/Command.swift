@@ -4,26 +4,26 @@ enum Direction: String, Codable, CaseIterable {
     case west, south, north, east
 }
 
-/// Tutte le azioni eseguibili, invocate da hotkey e menubar.
+/// All executable actions, invoked from hotkey and menubar.
 enum Command: Codable, Equatable, Hashable {
     case focus(Direction)
-    case focusDisplay(Direction)      // solo west/east
+    case focusDisplay(Direction)      // west/east only
     case swap(Direction)
     case warp(Direction)
-    case rotate                       // 270°, come yabai --rotate 270
+    case rotate                       // 270°, like yabai --rotate 270
     case mirrorX
     case mirrorY
     case balance
     case toggleFloat
     case toggleZoom
-    case moveToDisplay(Direction)     // solo west/east, poi focus segue
+    case moveToDisplay(Direction)     // west/east only, then focus follows
     case moveToWorkspace(Int)
     case moveToWorkspacePrev
     case moveToWorkspaceNext
     case pauseResume
     case retileAll
 
-    /// Titolo per menu e settings.
+    /// Title for menu and settings.
     var title: String {
         switch self {
         case .focus(let d): return "Focus \(d.italian)"

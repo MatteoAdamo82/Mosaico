@@ -1,6 +1,6 @@
 import CoreGraphics
 
-/// Record di una finestra gestita.
+/// Record of a managed window.
 final class ManagedWindow {
     let window: AXWindow
     var isFloating = false
@@ -13,14 +13,14 @@ final class ManagedWindow {
     var id: WindowID { window.id }
 }
 
-/// Un workspace: l'albero di tiling di uno space nativo.
+/// A workspace: the tiling tree of a native space.
 final class Workspace {
     let tree = BSPTree()
-    /// Tutte le finestre del workspace (anche floating).
+    /// All windows of the workspace (including floating ones).
     var windows: [WindowID: ManagedWindow] = [:]
 
-    /// Incrementata a ogni apply: invalida i re-apply ritardati quando
-    /// l'albero cambia nel frattempo.
+    /// Incremented on every apply: invalidates delayed re-applies when
+    /// the tree changes in the meantime.
     var layoutGeneration = 0
 
     func add(_ managed: ManagedWindow, near: WindowID?, leafRect: (WindowID) -> CGRect?) {

@@ -1,18 +1,18 @@
 import AppKit
 
-/// Un workspace (albero di tiling) per ogni (display, space nativo macOS).
+/// One workspace (tiling tree) for each (display, native macOS space).
 ///
-/// Gli "spazi" sono SOLO quelli nativi di Mission Control: ogni space ha il
-/// suo albero, le finestre di uno space non toccano mai il layout degli
-/// altri, e il layout viene applicato solo allo space visibile.
+/// The "spaces" are ONLY the native Mission Control ones: each space has its
+/// own tree, the windows of one space never touch the layout of the others,
+/// and the layout is applied only to the visible space.
 final class WorkspaceManager {
 
-    /// Stato di un singolo space nativo: un workspace.
+    /// State of a single native space: a workspace.
     final class SpaceState {
         let workspace = Workspace()
     }
 
-    /// Stato per display: uno SpaceState per ogni space nativo visto.
+    /// Per-display state: one SpaceState for each native space seen.
     final class DisplayState {
         let displayID: CGDirectDisplayID
         var spaces: [NativeSpaceID: SpaceState] = [:]
@@ -24,7 +24,7 @@ final class WorkspaceManager {
 
     private(set) var displays: [CGDirectDisplayID: DisplayState] = [:]
 
-    /// Posizione di una finestra nel modello.
+    /// Position of a window in the model.
     struct Location {
         let display: DisplayState
         let space: SpaceState
@@ -32,10 +32,10 @@ final class WorkspaceManager {
         let managed: ManagedWindow
     }
 
-    // MARK: - Setup display
+    // MARK: - Display setup
 
-    /// Stato dei display temporaneamente assenti (es. durante lo standby):
-    /// conservato per non distruggere il layout se il display ritorna.
+    /// State of temporarily absent displays (e.g. during standby):
+    /// kept so the layout is not destroyed if the display returns.
     private var detachedDisplays: [CGDirectDisplayID: DisplayState] = [:]
 
     func syncDisplays() {
@@ -44,13 +44,13 @@ final class WorkspaceManager {
             let id = DisplayManager.displayID(of: screen)
             seen.insert(id)
             if displays[id] == nil {
-                // Display ricomparso (wake): ripristina lo stato conservato
+                // Display reappeared (wake): restore the kept state
                 displays[id] = detachedDisplays.removeValue(forKey: id) ?? DisplayState(displayID: id)
             }
         }
-        // Display spariti: NON fondere subito — al wake riappaiono in pochi
-        // secondi. Sposta lo stato in "detached"; il merge sul primario
-        // avviene solo se il display resta assente (vedi mergeStaleDetached).
+        // Vanished displays: do NOT merge immediately — on wake they reappear
+        // within a few seconds. Move the state to "detached"; the merge onto
+        // the primary happens only if the display stays absent (see mergeStaleDetached).
         let orphans = displays.keys.filter { !seen.contains($0) }
         for orphanID in orphans {
             if let orphan = displays.removeValue(forKey: orphanID) {
@@ -59,8 +59,8 @@ final class WorkspaceManager {
         }
     }
 
-    /// Fonde sul primario le finestre dei display rimasti assenti a lungo
-    /// (unplug reale, non standby). Da chiamare dopo un grace period.
+    /// Merges onto the primary the windows of displays that stayed absent for
+    /// a long time (real unplug, not standby). To be called after a grace period.
     func mergeStaleDetached() {
         guard !detachedDisplays.isEmpty,
               let primary = NSScreen.screens.first else { return }
@@ -75,7 +75,7 @@ final class WorkspaceManager {
         detachedDisplays.removeAll()
     }
 
-    // MARK: - Risoluzione space/workspace
+    // MARK: - Space/workspace resolution
 
     private func displayState(for id: CGDirectDisplayID) -> DisplayState {
         if let state = displays[id] { return state }
@@ -92,13 +92,13 @@ final class WorkspaceManager {
         return state
     }
 
-    /// Workspace dello space nativo attualmente visibile sul display.
+    /// Workspace of the native space currently visible on the display.
     func activeWorkspace(for screen: NSScreen) -> Workspace {
         let spaceID = SpaceTracker.currentSpace(for: screen) ?? 0
         return spaceState(displayID: DisplayManager.displayID(of: screen), spaceID: spaceID).workspace
     }
 
-    /// True se il workspace appartiene allo space VISIBILE del suo display.
+    /// True if the workspace belongs to the VISIBLE space of its display.
     func isVisible(_ workspace: Workspace) -> Bool {
         for (displayID, display) in displays {
             for (spaceID, spaceState) in display.spaces where spaceState.workspace === workspace {
@@ -109,7 +109,7 @@ final class WorkspaceManager {
         return false
     }
 
-    /// Cerca la finestra in tutto il modello.
+    /// Searches for the window across the whole model.
     func locate(_ id: WindowID) -> Location? {
         for (_, display) in displays {
             for (_, spaceState) in display.spaces {

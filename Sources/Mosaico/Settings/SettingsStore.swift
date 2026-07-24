@@ -1,15 +1,15 @@
 import Foundation
 import Combine
 
-/// Regola di esclusione per una finestra specifica (app + titolo esatto).
+/// Exclusion rule for a specific window (app + exact title).
 struct WindowRule: Codable, Equatable, Hashable, Identifiable {
     var bundleID: String
     var title: String
     var id: String { bundleID + "|" + title }
 }
 
-/// Wrapper che assorbe elementi non decodificabili (es. binding salvati che
-/// riferiscono comandi rimossi) senza far fallire l'intero array.
+/// Wrapper that absorbs undecodable elements (e.g. saved bindings that
+/// reference removed commands) without failing the entire array.
 private struct Failable<T: Decodable>: Decodable {
     let value: T?
     init(from decoder: Decoder) {
@@ -28,8 +28,8 @@ struct MosaicoSettings: Codable, Equatable {
 
     init() {}
 
-    // Decodifica tollerante: campi assenti → default; binding singoli
-    // invalidi → scartati senza azzerare il resto.
+    // Tolerant decoding: absent fields → default; individual invalid
+    // bindings → discarded without wiping out the rest.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         padding = try c.decodeIfPresent(Double.self, forKey: .padding) ?? 7
@@ -53,8 +53,8 @@ struct MosaicoSettings: Codable, Equatable {
     ]
 }
 
-/// Persistenza JSON in ~/Library/Application Support/Mosaico/settings.json.
-/// Osservabile: i manager si ri-configurano quando le impostazioni cambiano.
+/// JSON persistence in ~/Library/Application Support/Mosaico/settings.json.
+/// Observable: managers reconfigure themselves when settings change.
 final class SettingsStore: ObservableObject {
     static let shared = SettingsStore()
 

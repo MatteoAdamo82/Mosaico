@@ -1,7 +1,7 @@
 import AppKit
 
-/// Overlay traslucido che evidenzia la zona di drop durante il drag
-/// (swap = tutta la finestra target, warp = la metà interessata).
+/// Translucent overlay that highlights the drop zone during the drag
+/// (swap = the whole target window, warp = the affected half).
 final class DropZoneOverlay {
     static let shared = DropZoneOverlay()
 
@@ -29,7 +29,7 @@ final class DropZoneOverlay {
         return window
     }
 
-    /// Mostra (o sposta) l'overlay sul rect in coordinate AX.
+    /// Shows (or moves) the overlay to the rect in AX coordinates.
     func show(axRect: CGRect) {
         let cocoa = DisplayManager.cocoaRect(fromAX: axRect)
         if window == nil { window = makeWindow() }

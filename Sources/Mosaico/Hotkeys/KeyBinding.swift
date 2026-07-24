@@ -8,7 +8,7 @@ struct KeyBinding: Codable, Equatable, Hashable, Identifiable {
 
     var id: String { "\(keyCode)-\(carbonModifiers)" }
 
-    /// Preset di default: traduzione 1:1 di skhdrc + switch workspace ctrl-1..7.
+    /// Default preset: 1:1 translation of skhdrc + workspace switching ctrl-1..7.
     static let defaultPreset: [KeyBinding] = {
         let alt = UInt32(optionKey)
         let shiftAlt = UInt32(optionKey | shiftKey)
@@ -16,7 +16,7 @@ struct KeyBinding: Codable, Equatable, Hashable, Identifiable {
 
         var b: [KeyBinding] = []
 
-        // Focus finestra: alt-hjkl
+        // Window focus: alt-hjkl
         b.append(.init(keyCode: UInt32(kVK_ANSI_H), carbonModifiers: alt, command: .focus(.west)))
         b.append(.init(keyCode: UInt32(kVK_ANSI_J), carbonModifiers: alt, command: .focus(.south)))
         b.append(.init(keyCode: UInt32(kVK_ANSI_K), carbonModifiers: alt, command: .focus(.north)))
@@ -46,22 +46,22 @@ struct KeyBinding: Codable, Equatable, Hashable, Identifiable {
         b.append(.init(keyCode: UInt32(kVK_ANSI_K), carbonModifiers: ctrlAlt, command: .warp(.north)))
         b.append(.init(keyCode: UInt32(kVK_ANSI_L), carbonModifiers: ctrlAlt, command: .warp(.east)))
 
-        // Sposta su display: shift+alt-s/g
+        // Move to display: shift+alt-s/g
         b.append(.init(keyCode: UInt32(kVK_ANSI_S), carbonModifiers: shiftAlt, command: .moveToDisplay(.west)))
         b.append(.init(keyCode: UInt32(kVK_ANSI_G), carbonModifiers: shiftAlt, command: .moveToDisplay(.east)))
 
-        // Sposta su workspace prev/next: shift+alt-p/n
+        // Move to workspace prev/next: shift+alt-p/n
         b.append(.init(keyCode: UInt32(kVK_ANSI_P), carbonModifiers: shiftAlt, command: .moveToWorkspacePrev))
         b.append(.init(keyCode: UInt32(kVK_ANSI_N), carbonModifiers: shiftAlt, command: .moveToWorkspaceNext))
 
-        // Sposta su space nativo 1..7: shift+alt-1..7.
-        // Lo switch di space resta a Mission Control (Ctrl+N di sistema).
+        // Move to native space 1..7: shift+alt-1..7.
+        // Space switching stays with Mission Control (system Ctrl+N).
         let digits: [Int] = [kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5, kVK_ANSI_6, kVK_ANSI_7]
         for (i, key) in digits.enumerated() {
             b.append(.init(keyCode: UInt32(key), carbonModifiers: shiftAlt, command: .moveToWorkspace(i + 1)))
         }
 
-        // Servizio: ctrl+alt-q pausa, ctrl+alt-r retile
+        // Service: ctrl+alt-q pause, ctrl+alt-r retile
         b.append(.init(keyCode: UInt32(kVK_ANSI_Q), carbonModifiers: ctrlAlt, command: .pauseResume))
         b.append(.init(keyCode: UInt32(kVK_ANSI_R), carbonModifiers: ctrlAlt, command: .retileAll))
 

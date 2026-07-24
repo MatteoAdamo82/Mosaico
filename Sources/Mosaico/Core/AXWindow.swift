@@ -4,8 +4,8 @@ import CAXShim
 
 typealias WindowID = CGWindowID
 
-/// Wrapper di un AXUIElement finestra. Tutte le coordinate in spazio AX
-/// (origine alto-sinistra del primario).
+/// Wrapper of a window AXUIElement. All coordinates in AX space
+/// (top-left origin of the primary display).
 final class AXWindow {
     let element: AXUIElement
     let pid: pid_t
@@ -21,7 +21,7 @@ final class AXWindow {
         self.id = windowID
     }
 
-    // MARK: - Attributi
+    // MARK: - Attributes
 
     private func copyAttribute(_ name: String) -> CFTypeRef? {
         var value: CFTypeRef?
@@ -49,7 +49,7 @@ final class AXWindow {
         (copyAttribute("AXFullScreen") as? Bool) ?? false
     }
 
-    /// Sheet/dialog agganciati hanno un parent finestra.
+    /// Attached sheets/dialogs have a window parent.
     var hasWindowParent: Bool {
         guard let parent = copyAttribute(kAXParentAttribute) else { return false }
         let parentElement = parent as! AXUIElement
@@ -75,8 +75,8 @@ final class AXWindow {
         return AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &value) == .success
     }
 
-    /// Layer CGWindow: 0 = finestra normale; ≠0 = flottante di sistema
-    /// (PiP, palette always-on-top) — mai da tilare.
+    /// CGWindow layer: 0 = normal window; ≠0 = system floating
+    /// (PiP, always-on-top palette) — never to be tiled.
     var cgLayer: Int {
         guard let list = CGWindowListCopyWindowInfo(.optionIncludingWindow, id) as? [[String: Any]],
               let info = list.first,
@@ -103,8 +103,8 @@ final class AXWindow {
         }
     }
 
-    /// Trick "set twice" (Rectangle): position → size → size, alcune app
-    /// applicano il resize solo dopo il move o lo clampano al primo colpo.
+    /// "Set twice" trick (Rectangle): position → size → size, some apps
+    /// apply the resize only after the move or clamp it on the first hit.
     func setFrame(_ rect: CGRect) {
         setPosition(rect.origin)
         setSize(rect.size)
@@ -133,7 +133,7 @@ final class AXWindow {
 
     // MARK: - Focus
 
-    /// Porta la finestra sopra le altre senza cambiare focus/app attiva.
+    /// Brings the window above the others without changing focus/active app.
     func raise() {
         AXUIElementPerformAction(element, kAXRaiseAction as CFString)
     }

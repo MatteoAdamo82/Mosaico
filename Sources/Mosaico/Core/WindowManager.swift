@@ -1,6 +1,6 @@
 import AppKit
 
-/// Coordinatore centrale: discovery, eventi, comandi, layout.
+/// Central coordinator: discovery, events, commands, layout.
 final class WindowManager {
     static let shared = WindowManager()
 
@@ -14,10 +14,10 @@ final class WindowManager {
     private var isPaused = false
     private var started = false
 
-    /// Ultima finestra gestita che ha avuto il focus, e la precedente:
-    /// quando si apre una finestra nuova (che riceve subito il focus),
-    /// l'insert deve splittare quella focussata PRIMA — è questo che
-    /// produce il layout a spirale di yabai.
+    /// Last managed window that had focus, and the previous one:
+    /// when a new window opens (which immediately receives focus),
+    /// the insert must split the previously focused one FIRST — this is what
+    /// produces yabai's spiral layout.
     private var focusedWindowID: WindowID?
     private var previousFocusedWindowID: WindowID?
 
@@ -37,12 +37,12 @@ final class WindowManager {
 
         workspaceManager.syncDisplays()
 
-        // Eventi AX
+        // AX events
         observerCenter.onEvent = { [weak self] pid, notification, element in
             self?.handleAXEvent(pid: pid, notification: notification, element: element)
         }
 
-        // Lifecycle app
+        // App lifecycle
         lifecycle.onAppLaunched = { [weak self] app in
             self?.adopt(app: app)
         }
@@ -56,9 +56,9 @@ final class WindowManager {
             guard let self else { return }
             self.workspaceManager.syncDisplays()
             self.retileAll()
-            // Un display sparito ma non tornato entro il grace period è un
-            // unplug reale: recupera le sue finestre sul primario. Se invece
-            // è standby, torna prima e non c'è nulla da fondere.
+            // A display that disappeared but did not return within the grace
+            // period is a real unplug: recover its windows onto the primary. If
+            // instead it is standby, it returns first and there is nothing to merge.
             DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
                 guard let self else { return }
                 self.workspaceManager.mergeStaleDetached()
@@ -73,12 +73,12 @@ final class WindowManager {
         }
         lifecycle.start()
 
-        // Scan iniziale
+        // Initial scan
         for app in WindowDiscovery.tileableApps() {
             adopt(app: app)
         }
 
-        // Cattura il focus iniziale quando lo scan è assestato
+        // Capture the initial focus once the scan has settled
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             guard let self,
                   let app = NSWorkspace.shared.frontmostApplication,
@@ -87,7 +87,7 @@ final class WindowManager {
             self.noteFocus(window.id)
         }
 
-        // Hotkeys e mouse
+        // Hotkeys and mouse
         hotkeys.onCommand = { [weak self] command in
             self?.perform(command)
         }
@@ -95,12 +95,12 @@ final class WindowManager {
         mouse.delegate = self
         mouse.start()
 
-        // Riconciliazione periodica: auto-ripara eventi persi
+        // Periodic reconciliation: auto-repairs lost events
         reconcileTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             self?.reconcile()
         }
 
-        // Settings cambiati → re-registra hotkey e retile
+        // Settings changed → re-register hotkeys and retile
         NotificationCenter.default.addObserver(forName: .mosaicoSettingsChanged, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
             self.hotkeys.register(SettingsStore.shared.settings.bindings)
@@ -117,7 +117,7 @@ final class WindowManager {
         started = false
     }
 
-    // MARK: - Adozione app/finestre
+    // MARK: - App/window adoption
 
     private func adopt(app: NSRunningApplication) {
         guard app.activationPolicy == .regular,
@@ -133,17 +133,17 @@ final class WindowManager {
         }
     }
 
-    /// Inserisce una finestra nel workspace attivo dello SPACE NATIVO su cui
-    /// vive (non in quello visibile): le finestre di altri space non toccano
-    /// il layout corrente.
+    /// Inserts a window into the active workspace of the NATIVE SPACE it lives
+    /// on (not the visible one): windows from other spaces do not touch
+    /// the current layout.
     private func manage(window: AXWindow, bundleID: String?) {
         guard workspaceManager.locate(window.id) == nil else { return }
-        // Esclusa a runtime: mai ri-adottare (anche se il titolo è cambiato
-        // e la regola persistente non matcha più)
+        // Excluded at runtime: never re-adopt (even if the title has changed
+        // and the persistent rule no longer matches)
         guard runtimeExcluded[window.id] == nil else { return }
 
-        // Mouse premuto = probabile drag in corso (es. tab del Finder
-        // strappata in una finestra nuova): rimanda finché non rilascia.
+        // Mouse pressed = drag likely in progress (e.g. a Finder tab
+        // torn off into a new window): defer until it is released.
         if NSEvent.pressedMouseButtons != 0 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 self?.manage(window: window, bundleID: bundleID)
@@ -166,7 +166,7 @@ final class WindowManager {
         if disposition == .float {
             managed.isFloating = true
             workspace.add(managed, near: nil, leafRect: { _ in nil })
-            // Le float restano dove sono ma sopra le tiled, o spariscono
+            // Floating windows stay where they are but above the tiled ones, or disappear
             if workspaceManager.isVisible(workspace) {
                 window.raise()
             }
@@ -181,8 +181,8 @@ final class WindowManager {
         refreshMenuSnapshot()
     }
 
-    /// Foglia da splittare per una finestra nuova: la focussata, o la
-    /// focussata precedente se la nuova ha già preso il focus.
+    /// Leaf to split for a new window: the focused one, or the
+    /// previously focused one if the new window has already taken focus.
     private func insertionAnchor(in workspace: Workspace, excluding newID: WindowID) -> WindowID? {
         for candidate in [focusedWindowID, previousFocusedWindowID] {
             if let id = candidate, id != newID, workspace.tree.contains(id) {
@@ -198,7 +198,7 @@ final class WindowManager {
 
     private func removeApp(pid: pid_t) {
         observerCenter.stopObserving(pid: pid)
-        // Le esclusioni runtime dell'app terminata non servono più
+        // The runtime exclusions of the terminated app are no longer needed
         runtimeExcluded = runtimeExcluded.filter { $0.value.managed.window.pid != pid }
         var touched: [Workspace] = []
         for (_, display) in workspaceManager.displays {
@@ -224,7 +224,7 @@ final class WindowManager {
         refreshMenuSnapshot()
     }
 
-    // MARK: - Eventi AX
+    // MARK: - AX events
 
     private func handleAXEvent(pid: pid_t, notification: String, element: AXUIElement) {
         guard !isPaused else { return }
@@ -233,7 +233,7 @@ final class WindowManager {
         case kAXWindowCreatedNotification:
             guard let window = AXWindow(element: element, pid: pid) else { return }
             let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
-            // Piccolo delay: subito dopo la creazione role/subrole a volte non sono pronti
+            // Small delay: right after creation role/subrole are sometimes not ready
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
                 self?.manage(window: window, bundleID: bundleID)
             }
@@ -255,12 +255,12 @@ final class WindowManager {
             manage(window: window, bundleID: bundleID)
 
         case kAXWindowMovedNotification, kAXWindowResizedNotification:
-            // NON adottare qui: queste notifiche scattano anche quando è
-            // l'APP a ridimensionarsi (terminali che snappano alla griglia
-            // di celle), creando un loop apply→snap→adopt→apply. L'adozione
-            // da azione utente avviene solo al rilascio del mouse
-            // (handleDragEnd); la riconciliazione periodica corregge il
-            // resto. Ignora.
+            // Do NOT adopt here: these notifications also fire when it is
+            // the APP resizing itself (terminals snapping to the cell
+            // grid), creating an apply→snap→adopt→apply loop. Adoption
+            // from a user action happens only on mouse release
+            // (handleDragEnd); periodic reconciliation corrects the
+            // rest. Ignore.
             break
 
         default:
@@ -281,31 +281,31 @@ final class WindowManager {
         handleFocusChange(window)
     }
 
-    /// L'utente ha cambiato space nativo (Mission Control / Ctrl+freccia):
-    /// aggiorna indicatore e ripara lo space appena diventato visibile.
+    /// The user changed native space (Mission Control / Ctrl+arrow):
+    /// updates the indicator and repairs the space that just became visible.
     private func handleSpaceChanged() {
         guard !isPaused else { return }
-        MosaicoLog.log("space nativo cambiato")
+        MosaicoLog.log("native space changed")
         for screen in NSScreen.screens {
             applyLayout(workspace: workspaceManager.activeWorkspace(for: screen), screen: screen)
         }
-        // Adotta eventuali finestre nuove di questo space sfuggite agli eventi
+        // Adopt any new windows of this space that slipped past the events
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             self?.reconcile()
         }
     }
 
-    /// Al risveglio i display si riconfigurano con qualche secondo di ritardo:
-    /// aspetta che si assestino, poi ripristina il layout senza distruggere
-    /// gli stati dei display tornati. Se qualche display è davvero sparito
-    /// (unplug durante lo standby), solo allora fonde le sue finestre.
+    /// On wake the displays reconfigure with a few seconds of delay:
+    /// wait for them to settle, then restore the layout without destroying
+    /// the states of the returned displays. If some display has really disappeared
+    /// (unplug during standby), only then merge its windows.
     private func handleWake() {
-        MosaicoLog.log("wake dallo standby")
-        // Per i prossimi secondi la riconciliazione non tocca la struttura:
-        // riapplica solo l'albero salvato. Query AX/space sono instabili
-        // subito dopo il wake e ricostruirebbero i tree perdendo le posizioni.
+        MosaicoLog.log("wake from standby")
+        // For the next few seconds reconciliation does not touch the structure:
+        // it only re-applies the saved tree. AX/space queries are unstable
+        // right after wake and would rebuild the trees, losing the positions.
         structuralReconcileSuppressedUntil = Date().addingTimeInterval(8)
-        // Riapplica il layout esistente più volte mentre i display tornano
+        // Re-apply the existing layout multiple times while the displays return
         for delay in [1.0, 2.5, 5.0] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, !self.isPaused else { return }
@@ -315,8 +315,8 @@ final class WindowManager {
         }
     }
 
-    /// Rimuove dai tree le finestre diventate minimizzate: altrimenti la
-    /// riconciliazione riapplica loro un frame e le riporta a schermo.
+    /// Removes from the trees the windows that became minimized: otherwise
+    /// reconciliation re-applies a frame to them and brings them back on screen.
     private func pruneMinimizedWindows() {
         var toRemove: [WindowID] = []
         for (_, display) in workspaceManager.displays {
@@ -328,19 +328,19 @@ final class WindowManager {
             }
         }
         for id in toRemove {
-            MosaicoLog.log("rimossa minimizzata [\(id)]")
+            MosaicoLog.log("removed minimized [\(id)]")
             remove(windowID: id)
         }
     }
 
-    /// Rimuove le finestre il cui AXUIElement non risponde più.
-    /// SOLO sullo space visibile: le finestre degli altri spaces non sono
-    /// raggiungibili via AX e risulterebbero "invalide" pur esistendo —
-    /// verranno verificate quando l'utente visita il loro space.
+    /// Removes windows whose AXUIElement no longer responds.
+    /// ONLY on the visible space: windows on other spaces are not
+    /// reachable via AX and would appear "invalid" even though they exist —
+    /// they will be verified when the user visits their space.
     private func pruneInvalidWindows() {
-        // Il window server è autorevole sull'esistenza: se una finestra è
-        // ancora lì, l'invalidità AX è un glitch transitorio (tipico al
-        // wake) e NON va rimossa. Rimuovi solo ciò che è davvero sparito.
+        // The window server is authoritative on existence: if a window is
+        // still there, AX invalidity is a transient glitch (typical at
+        // wake) and must NOT be removed. Remove only what has really disappeared.
         let existing = WindowDiscovery.allWindowIDs()
         var toRemove: [WindowID] = []
         for (_, display) in workspaceManager.displays {
@@ -352,31 +352,31 @@ final class WindowManager {
             }
         }
         for id in toRemove {
-            MosaicoLog.log("rimossa invalida [\(id)]")
+            MosaicoLog.log("removed invalid [\(id)]")
             remove(windowID: id)
         }
     }
 
-    // MARK: - Riconciliazione
+    // MARK: - Reconciliation
 
-    /// Fino a questo istante la riconciliazione NON modifica la struttura
-    /// (niente prune/relocate/adopt): riapplica solo l'albero esistente.
-    /// Attivo dopo il wake, quando le query su AX e sugli space danno valori
-    /// instabili che porterebbero a ricostruire i tree e perdere le posizioni.
+    /// Until this instant reconciliation does NOT modify the structure
+    /// (no prune/relocate/adopt): it only re-applies the existing tree.
+    /// Active after wake, when queries on AX and on spaces give unstable
+    /// values that would rebuild the trees and lose the positions.
     private var structuralReconcileSuppressedUntil = Date.distantPast
 
-    /// Finestre viste su uno space diverso una volta sola: ricollocate solo
-    /// se il cambio si conferma al passaggio successivo (anti-glitch wake).
+    /// Windows seen on a different space only once: relocated only
+    /// if the change is confirmed on the next pass (wake anti-glitch).
     private var pendingRelocations = Set<WindowID>()
 
-    /// Auto-riparazione: rimuove finestre morte, ricolloca quelle spostate
-    /// di space, adotta le nuove, ripristina il layout visibile.
+    /// Auto-repair: removes dead windows, relocates the ones moved
+    /// across spaces, adopts new ones, restores the visible layout.
     private func reconcile() {
         guard !isPaused, started else { return }
         guard NSEvent.pressedMouseButtons == 0 else { return }
 
-        // Grace period post-wake: solo re-apply dell'albero esistente,
-        // nessuna modifica strutturale (le posizioni restano quelle salvate)
+        // Post-wake grace period: only re-apply the existing tree,
+        // no structural change (positions stay the saved ones)
         if Date() < structuralReconcileSuppressedUntil {
             for screen in NSScreen.screens {
                 applyLayout(workspace: workspaceManager.activeWorkspace(for: screen), screen: screen)
@@ -384,15 +384,15 @@ final class WindowManager {
             return
         }
 
-        // 1. Rimuovi finestre morte e minimizzate
+        // 1. Remove dead and minimized windows
         pruneInvalidWindows()
         pruneMinimizedWindows()
 
-        // 2. Ricolloca finestre spostate su un altro space nativo
-        //    (es. trascinate in Mission Control). Solo se il cambio di space
-        //    è CONFERMATO su due passaggi consecutivi: subito dopo wake /
-        //    display-sleep il window server riporta space instabili, e agire
-        //    al primo colpo ricostruirebbe i tree perdendo le posizioni.
+        // 2. Relocate windows moved to another native space
+        //    (e.g. dragged in Mission Control). Only if the space change
+        //    is CONFIRMED over two consecutive passes: right after wake /
+        //    display-sleep the window server reports unstable spaces, and acting
+        //    on the first hit would rebuild the trees, losing the positions.
         var currentDiffs = Set<WindowID>()
         var relocations: [(WindowID, AXWindow, String?)] = []
         for (_, display) in workspaceManager.displays {
@@ -401,7 +401,7 @@ final class WindowManager {
                     guard let actualSpace = SpaceTracker.space(of: id),
                           actualSpace != 0, actualSpace != storedSpaceID else { continue }
                     currentDiffs.insert(id)
-                    if pendingRelocations.contains(id) {   // confermato: 2° passaggio
+                    if pendingRelocations.contains(id) {   // confirmed: 2nd pass
                         let bundleID = NSRunningApplication(processIdentifier: managed.window.pid)?.bundleIdentifier
                         relocations.append((id, managed.window, bundleID))
                     }
@@ -410,12 +410,12 @@ final class WindowManager {
         }
         pendingRelocations = currentDiffs.subtracting(relocations.map(\.0))
         for (id, window, bundleID) in relocations {
-            MosaicoLog.log("ricolloca [\(id)] su nuovo space (confermato)")
+            MosaicoLog.log("relocate [\(id)] to new space (confirmed)")
             remove(windowID: id)
             manage(window: window, bundleID: bundleID)
         }
 
-        // 3. Adotta finestre nuove sfuggite agli eventi
+        // 3. Adopt new windows that slipped past the events
         for app in WindowDiscovery.tileableApps() {
             let ax = AXApplication(pid: app.processIdentifier)
             for window in ax.windows() where workspaceManager.locate(window.id) == nil {
@@ -423,7 +423,7 @@ final class WindowManager {
             }
         }
 
-        // 4. Ripristina il layout degli space visibili
+        // 4. Restore the layout of the visible spaces
         for screen in NSScreen.screens {
             applyLayout(workspace: workspaceManager.activeWorkspace(for: screen), screen: screen)
         }
@@ -433,8 +433,8 @@ final class WindowManager {
 
     // MARK: - Layout
 
-    /// Applica il layout SOLO se il workspace è quello visibile
-    /// (space nativo corrente + workspace virtuale attivo).
+    /// Applies the layout ONLY if the workspace is the visible one
+    /// (current native space + active virtual workspace).
     private func applyLayout(workspace: Workspace, screen: NSScreen) {
         guard !isPaused, workspaceManager.isVisible(workspace) else { return }
         LayoutEngine.apply(workspace: workspace, on: screen)
@@ -459,21 +459,21 @@ final class WindowManager {
         }
     }
 
-    // MARK: - Comandi
+    // MARK: - Commands
 
     func perform(_ command: Command) {
         switch command {
         case .pauseResume:
             isPaused.toggle()
             MenuState.shared.isPaused = isPaused
-            MosaicoLog.log(isPaused ? "tiling in pausa" : "tiling ripreso")
+            MosaicoLog.log(isPaused ? "tiling paused" : "tiling resumed")
             if !isPaused { reconcile() }
             refreshMenuSnapshot()
             return
         case .retileAll:
             isPaused = false
             MenuState.shared.isPaused = false
-            MosaicoLog.log("ricalcolo tiling (pausa disattivata)")
+            MosaicoLog.log("recompute tiling (pause disabled)")
             reconcile()
             return
         default:
@@ -553,14 +553,14 @@ final class WindowManager {
         }
     }
 
-    // MARK: - Helper comandi
+    // MARK: - Command helpers
 
     private func focusedLocation() -> WorkspaceManager.Location? {
         guard let id = currentFocusedID() else { return nil }
         return workspaceManager.locate(id)
     }
 
-    /// ID della finestra focused di sistema (non solo l'ultima tracciata).
+    /// ID of the system's focused window (not just the last tracked one).
     private func currentFocusedID() -> WindowID? {
         if let app = NSWorkspace.shared.frontmostApplication {
             let ax = AXApplication(pid: app.processIdentifier)
@@ -590,7 +590,7 @@ final class WindowManager {
         body(workspaceManager.activeWorkspace(for: screen), screen)
     }
 
-    /// Vicino geometrico nella direzione, per centro (stile yabai).
+    /// Geometric neighbor in the direction, by center (yabai style).
     private func neighbor(of id: WindowID, in workspace: Workspace, screen: NSScreen, direction: Direction) -> WindowID? {
         let rect = LayoutEngine.workspaceRect(for: screen)
         let gap = CGFloat(SettingsStore.shared.settings.gap)
@@ -694,10 +694,10 @@ final class WindowManager {
         mouse.followFocus(to: loc.managed.window)
     }
 
-    /// Sposta la finestra focussata su uno space nativo: la "afferra" con un
-    /// mouse-down simulato sulla titlebar, cambia space con Ctrl+N (Mission
-    /// Control trasporta la finestra afferrata), poi rilascia. Stessa tecnica
-    /// usata da yabai senza scripting addition.
+    /// Moves the focused window to a native space: "grabs" it with a
+    /// simulated mouse-down on the titlebar, changes space with Ctrl+N (Mission
+    /// Control carries the grabbed window), then releases. Same technique
+    /// used by yabai without a scripting addition.
     private func moveToNativeSpace(_ number: Int) {
         guard let loc = focusedLocation(),
               let screen = DisplayManager.screen(withDisplayID: loc.display.displayID),
@@ -711,7 +711,7 @@ final class WindowManager {
 
         MosaicoLog.log("moveToNativeSpace [\(window.id)] → space \(number)")
 
-        // Fuori dal tree subito, così il vecchio space si ricompatta
+        // Out of the tree immediately, so the old space recompacts
         loc.workspace.remove(loc.managed.id)
         applyLayoutIfVisible(loc.workspace)
 
@@ -721,7 +721,7 @@ final class WindowManager {
             EventPoster.postCtrlKey(key)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 EventPoster.postMouse(.leftMouseUp, at: grabPoint)
-                // La riconciliazione ricolloca la finestra nel tree del nuovo space
+                // Reconciliation relocates the window into the new space's tree
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                     self?.reconcile()
                 }
@@ -729,7 +729,7 @@ final class WindowManager {
         }
     }
 
-    // MARK: - Esclusione finestre specifiche
+    // MARK: - Excluding specific windows
 
     struct WindowInfo: Identifiable {
         let id: WindowID
@@ -739,12 +739,12 @@ final class WindowManager {
         let isExcluded: Bool
     }
 
-    /// Finestre escluse a runtime, per WindowID: immune ai cambi di titolo
-    /// (la regola persistente su app+titolo serve solo tra un riavvio e
-    /// l'altro). Tiene il riferimento per la riabilitazione istantanea.
+    /// Windows excluded at runtime, by WindowID: immune to title changes
+    /// (the persistent rule on app+title only serves between one restart and
+    /// the next). Keeps the reference for instant re-enabling.
     private var runtimeExcluded: [WindowID: (managed: ManagedWindow, rule: WindowRule?)] = [:]
 
-    /// Snapshot per il menu: finestre gestite + escluse (con flag).
+    /// Snapshot for the menu: managed + excluded windows (with flag).
     func managedWindowsSnapshot() -> [WindowInfo] {
         var result: [WindowInfo] = []
         for (_, display) in workspaceManager.displays {
@@ -752,19 +752,19 @@ final class WindowManager {
                 for (id, managed) in spaceState.workspace.windows {
                     let app = NSRunningApplication(processIdentifier: managed.window.pid)
                     result.append(WindowInfo(id: id,
-                                             title: managed.window.title ?? "(senza titolo)",
+                                             title: managed.window.title ?? "(untitled)",
                                              appName: app?.localizedName ?? "?",
                                              bundleID: app?.bundleIdentifier,
                                              isExcluded: false))
                 }
             }
         }
-        // Niente filtro isValid: le finestre di altri space risultano
-        // "invalide" via AX pur esistendo. Pulizia solo quando l'app termina.
+        // No isValid filter: windows on other spaces appear
+        // "invalid" via AX even though they exist. Cleanup only when the app terminates.
         for (id, entry) in runtimeExcluded {
             let app = NSRunningApplication(processIdentifier: entry.managed.window.pid)
             result.append(WindowInfo(id: id,
-                                     title: entry.managed.window.title ?? entry.rule?.title ?? "(senza titolo)",
+                                     title: entry.managed.window.title ?? entry.rule?.title ?? "(untitled)",
                                      appName: app?.localizedName ?? "?",
                                      bundleID: app?.bundleIdentifier,
                                      isExcluded: true))
@@ -772,15 +772,15 @@ final class WindowManager {
         return result.sorted { ($0.appName, $0.title) < ($1.appName, $1.title) }
     }
 
-    /// Regole persistenti non coperte da un'esclusione runtime (residui di
-    /// sessioni precedenti): mostrate a parte nel menu.
+    /// Persistent rules not covered by a runtime exclusion (leftovers from
+    /// previous sessions): shown separately in the menu.
     func staleExclusionRules() -> [WindowRule] {
         let covered = Set(runtimeExcluded.values.compactMap { $0.rule })
         return SettingsStore.shared.settings.excludedWindowRules.filter { !covered.contains($0) }
     }
 
-    /// Aggiorna lo stato osservabile del menu (la MenuBarExtra rivaluta il
-    /// contenuto solo su cambi di stato osservato).
+    /// Updates the observable menu state (the MenuBarExtra re-evaluates the
+    /// content only on observed state changes).
     func refreshMenuSnapshot() {
         MenuState.shared.windows = managedWindowsSnapshot()
         MenuState.shared.staleRules = staleExclusionRules()
@@ -794,8 +794,8 @@ final class WindowManager {
         }
     }
 
-    /// Esclude una finestra: fuori dal tiling subito (per ID) + regola
-    /// persistente best-effort (app + titolo attuale).
+    /// Excludes a window: out of tiling immediately (by ID) + best-effort
+    /// persistent rule (app + current title).
     func excludeWindow(_ id: WindowID) {
         guard let loc = workspaceManager.locate(id) else { return }
         let managed = loc.managed
@@ -812,45 +812,45 @@ final class WindowManager {
             }
         }
 
-        MosaicoLog.log("esclusa finestra [\(id)] '\(managed.window.title ?? "?")'")
+        MosaicoLog.log("excluded window [\(id)] '\(managed.window.title ?? "?")'")
         remove(windowID: id)
         runtimeExcluded[id] = (managed, rule)
         refreshMenuSnapshot()
     }
 
-    /// Riabilita una finestra esclusa: rimuove regola e blocco runtime,
-    /// la riadotta immediatamente.
+    /// Re-enables an excluded window: removes the rule and runtime block,
+    /// re-adopts it immediately.
     func reenableWindow(_ id: WindowID) {
         guard let entry = runtimeExcluded.removeValue(forKey: id) else { return }
         let window = entry.managed.window
         let bundleID = NSRunningApplication(processIdentifier: window.pid)?.bundleIdentifier
 
         var settings = SettingsStore.shared.settings
-        // Via la regola creata all'esclusione E ogni regola che matcha il
-        // titolo attuale (residui da titoli cambiati nel frattempo)
+        // Remove the rule created at exclusion AND every rule matching the
+        // current title (leftovers from titles changed in the meantime)
         settings.excludedWindowRules.removeAll {
             $0 == entry.rule || ($0.bundleID == bundleID && $0.title == window.title)
         }
         SettingsStore.shared.settings = settings
 
-        MosaicoLog.log("riabilitata finestra [\(id)] '\(window.title ?? "?")'")
+        MosaicoLog.log("re-enabled window [\(id)] '\(window.title ?? "?")'")
         manage(window: window, bundleID: bundleID)
         refreshMenuSnapshot()
     }
 
-    /// Rimuove una regola persistente orfana (da sessioni precedenti).
+    /// Removes an orphan persistent rule (from previous sessions).
     func removeExclusionRule(_ rule: WindowRule) {
         var settings = SettingsStore.shared.settings
         settings.excludedWindowRules.removeAll { $0 == rule }
         SettingsStore.shared.settings = settings
-        MosaicoLog.log("rimossa regola \(rule.bundleID) '\(rule.title)'")
+        MosaicoLog.log("removed rule \(rule.bundleID) '\(rule.title)'")
         refreshMenuSnapshot()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.reconcile()
         }
     }
 
-    // MARK: - Drop zones (stile yabai)
+    // MARK: - Drop zones (yabai style)
 
     private enum DropKind {
         case swap(WindowID)
@@ -861,12 +861,12 @@ final class WindowManager {
         let workspace: Workspace
         let screen: NSScreen
         let kind: DropKind
-        let highlight: CGRect   // rect da evidenziare, coordinate AX
+        let highlight: CGRect   // rect to highlight, AX coordinates
     }
 
-    /// La finestra che l'utente sta trascinando: tiled, frame reale che
-    /// contiene il cursore, origine lontana dal layout ma STESSE dimensioni —
-    /// un resize cambia le dimensioni e NON è un drag.
+    /// The window the user is dragging: tiled, real frame that
+    /// contains the cursor, origin far from the layout but SAME dimensions —
+    /// a resize changes the dimensions and is NOT a drag.
     private func findDragSource(at point: CGPoint) -> ManagedWindow? {
         let gap = CGFloat(SettingsStore.shared.settings.gap)
         var best: (ManagedWindow, CGFloat)?
@@ -888,7 +888,7 @@ final class WindowManager {
         return best?.0
     }
 
-    /// Zone: centro (30–70%) → swap; metà → warp nella direzione.
+    /// Zones: center (30–70%) → swap; half → warp in the direction.
     private func resolveDrop(source: ManagedWindow, at point: CGPoint) -> DropResolution? {
         guard let screen = DisplayManager.screen(containingAX: point) else { return nil }
         let workspace = workspaceManager.activeWorkspace(for: screen)
@@ -913,7 +913,7 @@ final class WindowManager {
         }
     }
 
-    /// Preview live durante il drag: evidenzia la zona di drop.
+    /// Live preview during the drag: highlights the drop zone.
     func updateDropPreview(at point: CGPoint) {
         guard !isPaused,
               let source = findDragSource(at: point),
@@ -928,8 +928,8 @@ final class WindowManager {
         DropZoneOverlay.shared.hide()
     }
 
-    /// Applica il drop (anche tra display: la finestra migra nel workspace
-    /// visibile del display di destinazione).
+    /// Applies the drop (also across displays: the window migrates to the
+    /// visible workspace of the destination display).
     func performDrop(source: ManagedWindow, at point: CGPoint) {
         DropZoneOverlay.shared.hide()
 
@@ -937,7 +937,7 @@ final class WindowManager {
               !source.isFloating else { return }
 
         guard let resolution = resolveDrop(source: source, at: point) else {
-            MosaicoLog.log("drop [\(source.id)] nessun target → snap back")
+            MosaicoLog.log("drop [\(source.id)] no target → snap back")
             applyLayoutIfVisible(sourceLoc.workspace)
             return
         }
@@ -960,7 +960,7 @@ final class WindowManager {
         applyLayout(workspace: resolution.workspace, screen: resolution.screen)
     }
 
-    /// Drop da drag normale (senza ⌥).
+    /// Drop from a normal drag (without ⌥).
     func handlePlainDrop(at point: CGPoint) {
         guard !isPaused else { return }
         DropZoneOverlay.shared.hide()
@@ -968,9 +968,9 @@ final class WindowManager {
         performDrop(source: source, at: point)
     }
 
-    /// Fine di qualsiasi gesto mouse: adotta i resize fatti a mano
-    /// (senza dipendere dalle notifiche AX, che Electron & co. non emettono)
-    /// e riporta al layout le finestre solo spostate.
+    /// End of any mouse gesture: adopts manual resizes
+    /// (without relying on AX notifications, which Electron & co. do not emit)
+    /// and brings windows that were only moved back to the layout.
     func handleDragEnd() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             guard let self, !self.isPaused, NSEvent.pressedMouseButtons == 0 else { return }
@@ -980,10 +980,10 @@ final class WindowManager {
         }
     }
 
-    /// Percorso unico di adozione: confronta frame reali e di layout del
-    /// workspace, adotta i resize (>6pt) nei ratio, riporta al layout le
-    /// finestre solo spostate. Usato sia dal debounce sugli eventi AX sia
-    /// dal mouse-up (per le app che non emettono notifiche, es. Electron).
+    /// Single adoption path: compares the workspace's real and layout
+    /// frames, adopts the resizes (>6pt) into the ratios, brings windows that
+    /// were only moved back to the layout. Used both by the debounce on AX events
+    /// and by mouse-up (for apps that do not emit notifications, e.g. Electron).
     private func adoptDivergences(workspace: Workspace, screen: NSScreen) {
         let gap = CGFloat(SettingsStore.shared.settings.gap)
         let rect = LayoutEngine.workspaceRect(for: screen)
@@ -1006,11 +1006,11 @@ final class WindowManager {
         }
     }
 
-    // MARK: - Accesso per MouseManager
+    // MARK: - Access for MouseManager
 
-    /// Cache per l'hit-test dal thread del tap: (frame, finestra) degli
-    /// workspace visibili. Ricostruita a ogni applyLayout/reconcile sul main;
-    /// letta dal thread del mouse senza chiamate AX.
+    /// Cache for the hit-test from the tap thread: (frame, window) of the
+    /// visible workspaces. Rebuilt on every applyLayout/reconcile on the main thread;
+    /// read from the mouse thread without AX calls.
     private let hitTestLock = NSLock()
     private var hitTestEntries: [(frame: CGRect, managed: ManagedWindow)] = []
 
@@ -1037,7 +1037,7 @@ final class WindowManager {
     func managedWindowCached(at point: CGPoint) -> ManagedWindow? {
         hitTestLock.lock()
         defer { hitTestLock.unlock() }
-        // Le float per ultime in lista = priorità (stanno sopra)
+        // Floating windows last in the list = priority (they are on top)
         return hitTestEntries.last(where: { $0.frame.contains(point) })?.managed
     }
 

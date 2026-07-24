@@ -1,7 +1,7 @@
 import AppKit
 
 protocol MouseManagerDelegate: AnyObject {
-    /// Hit-test SENZA chiamate AX (cache): sicuro dal thread del tap.
+    /// Hit-test WITHOUT AX calls (cache): safe from the tap thread.
     func managedWindowCached(at point: CGPoint) -> ManagedWindow?
     func performDrop(source: ManagedWindow, at point: CGPoint)
     func handlePlainDrop(at point: CGPoint)
@@ -11,13 +11,13 @@ protocol MouseManagerDelegate: AnyObject {
     func adjustRatio(for managed: ManagedWindow, delta: CGVector)
 }
 
-/// CGEventTap per: alt+left-drag sposta, alt+right-drag ridimensiona,
+/// CGEventTap for: alt+left-drag moves, alt+right-drag resizes,
 /// drop zones, mouse_follows_focus.
 ///
-/// Il tap gira su un THREAD DEDICATO: se il main thread è occupato con
-/// layout/AX, i click dell'utente non devono mai accumulare latenza.
-/// Nel callback niente lavoro pesante: hit-test da cache, tutto il resto
-/// dispatchato sul main.
+/// The tap runs on a DEDICATED THREAD: if the main thread is busy with
+/// layout/AX, the user's clicks must never accumulate latency.
+/// No heavy work in the callback: hit-test from cache, everything else
+/// dispatched to main.
 final class MouseManager {
     weak var delegate: MouseManagerDelegate?
 
@@ -32,12 +32,12 @@ final class MouseManager {
     }
     private var session: DragSession?
 
-    /// True mentre è attiva una sessione alt-drag (move o resize).
+    /// True while an alt-drag session (move or resize) is active.
     var isDragging: Bool { session != nil }
 
-    /// Ultima attività mouse REALE (movimento, click, drag): il warp del
-    /// follows-focus non deve mai scattare subito dopo. Scritto dal thread
-    /// del tap, letto dal main.
+    /// Last REAL mouse activity (movement, click, drag): the follows-focus
+    /// warp must never fire right after it. Written by the tap thread,
+    /// read by main.
     private let activityLock = NSLock()
     private var _lastActivity = Date.distantPast
     private var lastActivity: Date {
@@ -45,8 +45,8 @@ final class MouseManager {
         set { activityLock.lock(); _lastActivity = newValue; activityLock.unlock() }
     }
 
-    /// Punto del mouse-down corrente: il preview delle drop zones parte solo
-    /// dopo un drag "vero" (>30pt), non su ogni click o selezione di testo.
+    /// Current mouse-down point: the drop zones preview starts only
+    /// after a "real" drag (>30pt), not on every click or text selection.
     private var pressPoint: CGPoint?
     private var lastPreviewUpdate = Date.distantPast
     private var lastRatioUpdate = Date.distantPast
@@ -114,7 +114,7 @@ final class MouseManager {
         session = nil
     }
 
-    // MARK: - Event handling (thread del tap: veloce, niente AX se non in drag)
+    // MARK: - Event handling (tap thread: fast, no AX unless dragging)
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
@@ -122,7 +122,7 @@ final class MouseManager {
             return Unmanaged.passUnretained(event)
         }
 
-        let point = event.location   // coordinate CG/AX
+        let point = event.location   // CG/AX coordinates
         let altDown = event.flags.contains(.maskAlternate)
         lastActivity = Date()
 
@@ -153,7 +153,7 @@ final class MouseManager {
                 schedulePreview(at: point)
                 return nil
             }
-            // Drag normale: preview solo dopo spostamento vero (>30pt)
+            // Normal drag: preview only after real movement (>30pt)
             if let press = pressPoint, hypot(point.x - press.x, point.y - press.y) > 30 {
                 schedulePreview(at: point)
             }
@@ -165,7 +165,7 @@ final class MouseManager {
             }
             let delta = CGVector(dx: point.x - lastPoint.x, dy: point.y - lastPoint.y)
             session = .resize(managed, lastPoint: point)
-            // Ratio sul main, throttled a ~30Hz
+            // Ratio on main, throttled to ~30Hz
             if Date().timeIntervalSince(lastRatioUpdate) > 0.033 {
                 lastRatioUpdate = Date()
                 DispatchQueue.main.async { [weak self] in
@@ -182,9 +182,9 @@ final class MouseManager {
             return nil
 
         case .leftMouseUp:
-            // Drag reale solo se il puntatore si è mosso: un semplice click
-            // non deve innescare adozione di resize (i terminali che snappano
-            // verrebbero adottati a ogni click).
+            // Real drag only if the pointer moved: a simple click
+            // must not trigger resize adoption (snapping terminals
+            // would be adopted on every click).
             let wasDrag = pressPoint.map { hypot(point.x - $0.x, point.y - $0.y) > 6 } ?? false
             pressPoint = nil
             if case .move(let managed, _) = session {
@@ -220,7 +220,7 @@ final class MouseManager {
         }
     }
 
-    /// Preview drop zones sul main, throttled a ~15Hz.
+    /// Drop zones preview on main, throttled to ~15Hz.
     private func schedulePreview(at point: CGPoint) {
         guard Date().timeIntervalSince(lastPreviewUpdate) > 0.066 else { return }
         lastPreviewUpdate = Date()
@@ -231,9 +231,9 @@ final class MouseManager {
 
     // MARK: - Mouse follows focus
 
-    /// Sposta il cursore al centro della finestra focussata, se abilitato.
-    /// Mai durante drag, mai col tasto premuto, mai subito dopo attività
-    /// mouse reale (click compresi — sennò il warp ruba il puntatore).
+    /// Moves the cursor to the center of the focused window, if enabled.
+    /// Never during drag, never with a button held, never right after real
+    /// mouse activity (clicks included — otherwise the warp steals the pointer).
     func followFocus(to window: AXWindow) {
         guard SettingsStore.shared.settings.mouseFollowsFocus,
               session == nil,

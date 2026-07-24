@@ -1,8 +1,8 @@
 import CoreGraphics
 import Carbon.HIToolbox
 
-/// Emissione di eventi sintetici mouse/tastiera (per pilotare Mission Control:
-/// switch di space via Ctrl+N e trasporto finestre con drag simulato).
+/// Posting of synthetic mouse/keyboard events (to drive Mission Control:
+/// space switching via Ctrl+N and window transport with a simulated drag).
 enum EventPoster {
 
     static func postMouse(_ type: CGEventType, button: CGMouseButton = .left, at point: CGPoint) {
@@ -11,7 +11,7 @@ enum EventPoster {
         event.post(tap: .cghidEventTap)
     }
 
-    /// Ctrl + tasto (keycode) — keyDown e keyUp.
+    /// Ctrl + key (keycode) — keyDown and keyUp.
     static func postCtrlKey(_ keyCode: CGKeyCode) {
         for down in [true, false] {
             guard let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: down) else { continue }
@@ -20,7 +20,7 @@ enum EventPoster {
         }
     }
 
-    /// Keycode della cifra 1..9 (riga superiore).
+    /// Keycode of digit 1..9 (top row).
     static func digitKeyCode(_ digit: Int) -> CGKeyCode? {
         let codes: [Int: Int] = [
             1: kVK_ANSI_1, 2: kVK_ANSI_2, 3: kVK_ANSI_3, 4: kVK_ANSI_4,

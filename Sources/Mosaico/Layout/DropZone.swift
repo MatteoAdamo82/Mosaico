@@ -5,8 +5,8 @@ enum DropZoneKind: Equatable {
     case warp(Direction)
 }
 
-/// Geometria pura delle zone di drop (stile yabai): centro (30–70%) → swap;
-/// metà dominante → warp nella direzione, con il rect da evidenziare.
+/// Pure geometry of the drop zones (yabai-style): center (30–70%) → swap;
+/// dominant half → warp in that direction, with the rect to highlight.
 enum DropZone {
     static func resolve(point: CGPoint, in frame: CGRect) -> (kind: DropZoneKind, highlight: CGRect) {
         let rx = (point.x - frame.minX) / frame.width
