@@ -36,9 +36,8 @@ final class MouseManager {
     /// True while an alt-drag session (move or resize) is active.
     var isDragging: Bool { session != nil }
 
-    /// Last REAL mouse activity (movement, click, drag): the follows-focus
-    /// warp must never fire right after it. Written by the tap thread,
-    /// read by main.
+    /// Last REAL mouse activity (click or drag): the follows-focus warp must
+    /// never fire right after it. Written by the tap thread, read by main.
     private let activityLock = NSLock()
     private var _lastActivity = Date.distantPast
     private var lastActivity: Date {
@@ -66,14 +65,17 @@ final class MouseManager {
     }
 
     private func tapThreadMain() {
+        // NOTE: mouseMoved is deliberately NOT tapped. Routing every pointer
+        // movement through this process makes the window server recompute the
+        // cursor, so themed cursors (hand, resize, I-beam) flicker back to the
+        // arrow. Clicks and drags are enough for everything we do.
         let mask: CGEventMask =
             (1 << CGEventType.leftMouseDown.rawValue) |
             (1 << CGEventType.leftMouseDragged.rawValue) |
             (1 << CGEventType.leftMouseUp.rawValue) |
             (1 << CGEventType.rightMouseDown.rawValue) |
             (1 << CGEventType.rightMouseDragged.rawValue) |
-            (1 << CGEventType.rightMouseUp.rawValue) |
-            (1 << CGEventType.mouseMoved.rawValue)
+            (1 << CGEventType.rightMouseUp.rawValue)
 
         let callback: CGEventTapCallBack = { _, type, event, refcon in
             guard let refcon else { return Unmanaged.passUnretained(event) }
@@ -128,9 +130,6 @@ final class MouseManager {
         lastActivity = Date()
 
         switch type {
-        case .mouseMoved:
-            return Unmanaged.passUnretained(event)
-
         case .leftMouseDown:
             pressPoint = point
             // Remember which window is grabbed (used at mouse-up to adopt
@@ -216,7 +215,7 @@ final class MouseManager {
             return Unmanaged.passUnretained(event)
 
         case .rightMouseUp:
-            guard case .resize(let managed, _) = session else {
+            guard case .resize = session else {
                 return Unmanaged.passUnretained(event)
             }
             session = nil
@@ -258,7 +257,8 @@ final class MouseManager {
         mouse.y = (NSScreen.screens.first?.frame.maxY ?? 0) - mouse.y
         guard !frame.contains(mouse) else { return }
 
+        // No CGAssociateMouseAndMouseCursorPosition here: the pointer is
+        // never dissociated, and calling it resets the cursor appearance.
         CGWarpMouseCursorPosition(center)
-        CGAssociateMouseAndMouseCursorPosition(1)
     }
 }

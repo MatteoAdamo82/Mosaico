@@ -5,6 +5,18 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-07-25
+
+### Fixed
+
+- Themed mouse cursors (hand, resize, I-beam) flickered back to the arrow a
+  moment after appearing. Mosaico's event tap was intercepting every pointer
+  movement, which makes the window server recompute the cursor; that event
+  type was only used for a minor timing check and is no longer tapped.
+  Cursor appearance is now left entirely to the system
+- Removed a redundant pointer re-association call after the follows-focus
+  warp, which also reset the cursor appearance
+
 ## [0.2.0] - 2026-07-24
 
 ### Added
