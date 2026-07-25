@@ -5,6 +5,23 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-07-24
+
+### Added
+
+- "Avvia al login" is now a one-click toggle in the menubar, next to
+  Settings, in addition to the switch in Settings › General
+
+### Changed
+
+- Launch-at-login state is read from the system rather than a saved flag, so
+  the toggle always reflects reality — including changes made in System
+  Settings › Login Items while Mosaico is running
+- If macOS asks the user to approve the login item, Settings now says so and
+  offers a button that opens the right system pane
+- Failures registering the login item are written to the debug log instead
+  of a log channel the app cannot read back
+
 ## [0.1.11] - 2026-07-24
 
 ### Fixed

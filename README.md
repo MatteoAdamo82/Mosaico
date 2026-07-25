@@ -34,8 +34,8 @@ the terminal-heavy setup those tools require.
   windows float automatically and stay above the tiled layout; exclude
   whole apps or single windows from tiling via the menubar (excluded
   windows show a checkmark and can be toggled back at any time)
-- **GUI settings** — gaps, shortcuts recorder, exclusions, launch at login;
-  persisted as JSON
+- **GUI settings** — gaps, shortcuts recorder, exclusions; persisted as JSON.
+  Launch at login is a toggle in both the menubar and Settings
 
 ## Requirements
 

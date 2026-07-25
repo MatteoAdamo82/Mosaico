@@ -20,6 +20,7 @@ struct SettingsView: View {
 
 private struct GeneralSettingsView: View {
     @ObservedObject private var store = SettingsStore.shared
+    @ObservedObject private var loginItem = LoginItem.shared
 
     var body: some View {
         Form {
@@ -40,20 +41,20 @@ private struct GeneralSettingsView: View {
 
             Section("Avvio") {
                 Toggle("Avvia Mosaico al login", isOn: Binding(
-                    get: { SMAppService.mainApp.status == .enabled },
-                    set: { enable in
-                        do {
-                            if enable {
-                                try SMAppService.mainApp.register()
-                            } else {
-                                try SMAppService.mainApp.unregister()
-                            }
-                        } catch {
-                            NSLog("Mosaico: login item error: \(error)")
-                        }
-                        store.settings.launchAtLogin = enable
-                    }
+                    get: { loginItem.isEnabled },
+                    set: { loginItem.set($0) }
                 ))
+
+                if loginItem.needsApproval {
+                    HStack {
+                        Text("macOS richiede la tua approvazione")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Apri Impostazioni di Sistema") {
+                            LoginItem.openSystemSettings()
+                        }
+                    }
+                }
             }
         }
         .formStyle(.grouped)

@@ -4,6 +4,7 @@ import SwiftUI
 /// calls the WindowManager in-process instead of shelling out to yabai.
 struct MenuContent: View {
     @ObservedObject private var menuState = MenuState.shared
+    @ObservedObject private var loginItem = LoginItem.shared
 
     var body: some View {
         Section("Focus Finestra") {
@@ -83,6 +84,10 @@ struct MenuContent: View {
                 WindowManager.shared.perform(.pauseResume)
             }
             cmd(.retileAll, "⌃⌥R")
+
+            Button("\(loginItem.isEnabled ? "✓" : "　")  Avvia al login") {
+                loginItem.toggle()
+            }
 
             Button("Impostazioni…") {
                 SettingsWindowController.shared.show()

@@ -24,7 +24,6 @@ struct MosaicoSettings: Codable, Equatable {
     var excludedBundleIDs: [String] = MosaicoSettings.defaultExclusions
     var excludedWindowRules: [WindowRule] = []
     var bindings: [KeyBinding] = KeyBinding.defaultPreset
-    var launchAtLogin: Bool = false
 
     init() {}
 
@@ -39,7 +38,6 @@ struct MosaicoSettings: Codable, Equatable {
         excludedWindowRules = try c.decodeIfPresent([WindowRule].self, forKey: .excludedWindowRules) ?? []
         let decoded = (try c.decodeIfPresent([Failable<KeyBinding>].self, forKey: .bindings))?.compactMap(\.value) ?? []
         bindings = decoded.isEmpty ? KeyBinding.defaultPreset : decoded
-        launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
     }
 
     static let defaultExclusions: [String] = [

@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
 
         MosaicoLog.rotate()
+        // The user may have changed the login item in System Settings
+        LoginItem.shared.refresh()
         MosaicoLog.log("avvio: AXIsProcessTrusted=\(AXIsProcessTrusted())")
 
         if AXIsProcessTrusted() {
