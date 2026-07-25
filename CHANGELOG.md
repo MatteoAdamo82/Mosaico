@@ -5,6 +5,18 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11] - 2026-07-24
+
+### Fixed
+
+- Ghost tiles: empty rectangles left in the layout by windows that were gone
+  or hidden (⌘H) but that Accessibility still reported as valid, so they kept
+  their slot. Mosaico was rewriting their frames every few seconds forever.
+  Windows in the visible workspace that the window server does not report on
+  screen are now dropped from the layout (confirmed across two passes to
+  avoid false positives), and such windows are no longer adopted in the first
+  place — they come back into the layout when they actually reappear
+
 ## [0.1.10] - 2026-07-24
 
 ### Fixed

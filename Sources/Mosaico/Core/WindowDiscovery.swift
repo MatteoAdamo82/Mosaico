@@ -28,6 +28,23 @@ enum WindowDiscovery {
         return ids
     }
 
+    /// IDs of windows currently ON SCREEN at layer 0 (real, visible
+    /// windows). A window in the visible workspace that is missing here is
+    /// hidden (⌘H), closed or a zombie — it must not keep a tile slot.
+    static func onScreenWindowIDs() -> Set<WindowID> {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                                    kCGNullWindowID) as? [[String: Any]] else {
+            return []
+        }
+        var ids = Set<WindowID>()
+        for info in list {
+            guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
+                  let number = info[kCGWindowNumber as String] as? UInt32 else { continue }
+            ids.insert(number)
+        }
+        return ids
+    }
+
     /// AX windows of an app with retry/backoff (just-launched apps
     /// respond kAXErrorCannotComplete for a while; Electron has a lazy
     /// AX tree until it is "poked").

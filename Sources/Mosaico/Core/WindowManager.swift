@@ -161,6 +161,7 @@ final class WindowManager {
 
         let spaceState = workspaceManager.spaceState(displayID: displayID, spaceID: spaceID)
         let workspace = spaceState.workspace
+
         let managed = ManagedWindow(window: window)
 
         if disposition == .float {
@@ -333,6 +334,38 @@ final class WindowManager {
         }
     }
 
+    /// Windows seen off-screen once: removed only if still off-screen on the
+    /// next pass (a single check can catch a transient state).
+    private var pendingGhosts = Set<WindowID>()
+
+    /// Removes "ghost" tiles: windows in the VISIBLE workspace that the
+    /// window server no longer reports on screen (hidden with ⌘H, closed
+    /// without Accessibility noticing, zombies). They keep a slot in the
+    /// layout and the tiling shows an empty rectangle.
+    private func pruneGhostWindows() {
+        let onScreen = WindowDiscovery.onScreenWindowIDs()
+        var stillMissing = Set<WindowID>()
+        var toRemove: [WindowID] = []
+
+        for screen in NSScreen.screens {
+            let workspace = workspaceManager.activeWorkspace(for: screen)
+            for (id, managed) in workspace.windows where !managed.isFloating {
+                guard !onScreen.contains(id) else { continue }
+                if pendingGhosts.contains(id) {
+                    toRemove.append(id)          // confirmed on the 2nd pass
+                } else {
+                    stillMissing.insert(id)      // first sighting: wait
+                }
+            }
+        }
+        pendingGhosts = stillMissing
+
+        for id in toRemove {
+            MosaicoLog.log("removed ghost [\(id)] (off screen)")
+            remove(windowID: id)
+        }
+    }
+
     /// Removes windows whose AXUIElement no longer responds.
     /// ONLY on the visible space: windows on other spaces are not
     /// reachable via AX and would appear "invalid" even though they exist —
@@ -387,9 +420,10 @@ final class WindowManager {
             return
         }
 
-        // 1. Remove dead and minimized windows
+        // 1. Remove dead, minimized and ghost windows
         pruneInvalidWindows()
         pruneMinimizedWindows()
+        pruneGhostWindows()
 
         // 2. Relocate windows moved to another native space
         //    (e.g. dragged in Mission Control). Only if the space change
@@ -418,10 +452,15 @@ final class WindowManager {
             manage(window: window, bundleID: bundleID)
         }
 
-        // 3. Adopt new windows that slipped past the events
+        // 3. Adopt new windows that slipped past the events. Only ones
+        //    actually on screen: a hidden (⌘H) or leftover window would just
+        //    reserve an empty tile. Windows on other spaces are adopted when
+        //    that space is visited.
+        let onScreenNow = WindowDiscovery.onScreenWindowIDs()
         for app in WindowDiscovery.tileableApps() {
             let ax = AXApplication(pid: app.processIdentifier)
-            for window in ax.windows() where workspaceManager.locate(window.id) == nil {
+            for window in ax.windows()
+            where workspaceManager.locate(window.id) == nil && onScreenNow.contains(window.id) {
                 manage(window: window, bundleID: app.bundleIdentifier)
             }
         }
