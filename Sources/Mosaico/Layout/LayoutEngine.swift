@@ -73,6 +73,12 @@ enum LayoutEngine {
             for (_, entries) in byPid {
                 for (managed, target) in entries where !rectsEqual(managed.window.frame, target) {
                     managed.window.setFrame(target)
+                    // A window that still refuses its frame is the classic
+                    // source of "one window covers the others": leave the
+                    // evidence in the log.
+                    if !rectsEqual(managed.window.frame, target, tolerance: 10) {
+                        MosaicoLog.log("stubborn [\(managed.id)] keeps \(managed.window.frame), wants \(target)")
+                    }
                 }
             }
         }

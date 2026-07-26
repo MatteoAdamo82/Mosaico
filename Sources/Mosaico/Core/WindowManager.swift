@@ -459,7 +459,24 @@ final class WindowManager {
         let onScreenNow = WindowDiscovery.onScreenWindowIDs()
         for app in WindowDiscovery.tileableApps() {
             let ax = AXApplication(pid: app.processIdentifier)
-            for window in ax.windows()
+            let axWindows = ax.windows()
+
+            if axWindows.isEmpty {
+                // Chrome/Electron lazy AX tree: the window server sees this
+                // app's windows but Accessibility exposes none — those
+                // windows would stay untiled, full-size, on top of the
+                // layout. Poke the app; they get adopted on the next pass.
+                let unmanagedOwned = WindowDiscovery
+                    .onScreenWindowIDs(ownedBy: app.processIdentifier)
+                    .filter { workspaceManager.locate($0) == nil }
+                if !unmanagedOwned.isEmpty {
+                    MosaicoLog.log("AX gap: \(app.localizedName ?? "?") has \(unmanagedOwned.count) on-screen windows, AX reports none — poking")
+                    ax.pokeManualAccessibility()
+                }
+                continue
+            }
+
+            for window in axWindows
             where workspaceManager.locate(window.id) == nil && onScreenNow.contains(window.id) {
                 manage(window: window, bundleID: app.bundleIdentifier)
             }
@@ -1079,7 +1096,7 @@ final class WindowManager {
 
                 let gap = CGFloat(SettingsStore.shared.settings.gap)
                 let rect = LayoutEngine.workspaceRect(for: screen)
-                guard let expected = loc.workspace.tree.frames(in: rect, gap: gap)[candidate.id] else { continue }
+                guard loc.workspace.tree.frames(in: rect, gap: gap)[candidate.id] != nil else { continue }
 
                 MosaicoLog.log("adopt [\(candidate.id)] was=\(candidate.originalFrame) now=\(actual)")
                 loc.workspace.tree.adoptFrame(for: candidate.id, actual: actual, in: rect, gap: gap)

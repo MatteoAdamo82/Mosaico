@@ -45,6 +45,24 @@ enum WindowDiscovery {
         return ids
     }
 
+    /// On-screen layer-0 windows owned by a specific process. Used to detect
+    /// the Chrome/Electron "lazy AX tree" case: the window server sees the
+    /// windows but Accessibility reports none.
+    static func onScreenWindowIDs(ownedBy pid: pid_t) -> Set<WindowID> {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                                    kCGNullWindowID) as? [[String: Any]] else {
+            return []
+        }
+        var ids = Set<WindowID>()
+        for info in list {
+            guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
+                  let owner = info[kCGWindowOwnerPID as String] as? Int, pid_t(owner) == pid,
+                  let number = info[kCGWindowNumber as String] as? UInt32 else { continue }
+            ids.insert(number)
+        }
+        return ids
+    }
+
     /// AX windows of an app with retry/backoff (just-launched apps
     /// respond kAXErrorCannotComplete for a while; Electron has a lazy
     /// AX tree until it is "poked").
