@@ -342,8 +342,7 @@ final class WindowManager {
     /// window server no longer reports on screen (hidden with ⌘H, closed
     /// without Accessibility noticing, zombies). They keep a slot in the
     /// layout and the tiling shows an empty rectangle.
-    private func pruneGhostWindows() {
-        let onScreen = WindowDiscovery.onScreenWindowIDs()
+    private func pruneGhostWindows(onScreen: Set<WindowID>) {
         var stillMissing = Set<WindowID>()
         var toRemove: [WindowID] = []
 
@@ -404,12 +403,22 @@ final class WindowManager {
 
     /// Auto-repair: removes dead windows, relocates the ones moved
     /// across spaces, adopts new ones, restores the visible layout.
+    /// Last window-server snapshot: when nothing changed since the previous
+    /// pass, the whole reconciliation is skipped — no AX/CGS IPC at idle.
+    private var lastReconcileSnapshot: WindowDiscovery.WindowSnapshot?
+
     private func reconcile() {
         guard !isPaused, started else { return }
         guard NSEvent.pressedMouseButtons == 0 else { return }
         // A gesture just ended: its adoption is still pending, re-applying
         // now would snap the window back to its pre-resize size.
         guard Date() >= adoptionPendingUntil else { return }
+
+        // ONE window-server call answers "did anything change?". If not,
+        // there is nothing to heal: skip all Accessibility/space IPC.
+        let snapshot = WindowDiscovery.snapshot()
+        if snapshot == lastReconcileSnapshot { return }
+        lastReconcileSnapshot = snapshot
 
         // Post-wake grace period: only re-apply the existing tree,
         // no structural change (positions stay the saved ones)
@@ -423,7 +432,7 @@ final class WindowManager {
         // 1. Remove dead, minimized and ghost windows
         pruneInvalidWindows()
         pruneMinimizedWindows()
-        pruneGhostWindows()
+        pruneGhostWindows(onScreen: snapshot.ids)
 
         // 2. Relocate windows moved to another native space
         //    (e.g. dragged in Mission Control). Only if the space change
@@ -456,7 +465,7 @@ final class WindowManager {
         //    actually on screen: a hidden (⌘H) or leftover window would just
         //    reserve an empty tile. Windows on other spaces are adopted when
         //    that space is visited.
-        let onScreenNow = WindowDiscovery.onScreenWindowIDs()
+        let onScreenNow = snapshot.ids
         for app in WindowDiscovery.tileableApps() {
             let ax = AXApplication(pid: app.processIdentifier)
             let axWindows = ax.windows()
@@ -466,8 +475,8 @@ final class WindowManager {
                 // app's windows but Accessibility exposes none — those
                 // windows would stay untiled, full-size, on top of the
                 // layout. Poke the app; they get adopted on the next pass.
-                let unmanagedOwned = WindowDiscovery
-                    .onScreenWindowIDs(ownedBy: app.processIdentifier)
+                let unmanagedOwned = snapshot
+                    .ids(ownedBy: app.processIdentifier)
                     .filter { workspaceManager.locate($0) == nil }
                 if !unmanagedOwned.isEmpty {
                     MosaicoLog.log("AX gap: \(app.localizedName ?? "?") has \(unmanagedOwned.count) on-screen windows, AX reports none — poking")

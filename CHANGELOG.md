@@ -5,6 +5,19 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-07-25
+
+### Fixed
+
+- Mosaico was consuming ~6% CPU at idle (measured), contributing to system
+  sluggishness and energy drain. Every 5 seconds the reconciliation swept
+  all apps through synchronous Accessibility and window-server IPC — even
+  when nothing had changed. Reconciliation now takes a single window-server
+  snapshot per pass and exits immediately when it matches the previous one:
+  idle cost drops to one cheap call every 5 seconds (0.0% CPU measured
+  after the fix). The full self-healing pass still runs whenever any window
+  actually appeared, moved or closed
+
 ## [0.2.2] - 2026-07-25
 
 ### Fixed

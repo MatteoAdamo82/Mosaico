@@ -28,39 +28,41 @@ enum WindowDiscovery {
         return ids
     }
 
-    /// IDs of windows currently ON SCREEN at layer 0 (real, visible
-    /// windows). A window in the visible workspace that is missing here is
-    /// hidden (⌘H), closed or a zombie — it must not keep a tile slot.
-    static func onScreenWindowIDs() -> Set<WindowID> {
-        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
-                                                    kCGNullWindowID) as? [[String: Any]] else {
-            return []
+    /// One-shot capture of the window server state: on-screen layer-0
+    /// windows with owner and bounds. ONE CGWindowList call feeds the whole
+    /// reconciliation pass, and comparing two snapshots tells whether
+    /// anything changed at all — the key to keeping idle cost near zero.
+    struct WindowSnapshot: Equatable {
+        struct Entry: Equatable {
+            let id: WindowID
+            let pid: pid_t
+            let bounds: CGRect
         }
-        var ids = Set<WindowID>()
-        for info in list {
-            guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
-                  let number = info[kCGWindowNumber as String] as? UInt32 else { continue }
-            ids.insert(number)
+        let entries: [Entry]
+
+        var ids: Set<WindowID> { Set(entries.map(\.id)) }
+
+        func ids(ownedBy pid: pid_t) -> Set<WindowID> {
+            Set(entries.filter { $0.pid == pid }.map(\.id))
         }
-        return ids
     }
 
-    /// On-screen layer-0 windows owned by a specific process. Used to detect
-    /// the Chrome/Electron "lazy AX tree" case: the window server sees the
-    /// windows but Accessibility reports none.
-    static func onScreenWindowIDs(ownedBy pid: pid_t) -> Set<WindowID> {
+    static func snapshot() -> WindowSnapshot {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
                                                     kCGNullWindowID) as? [[String: Any]] else {
-            return []
+            return WindowSnapshot(entries: [])
         }
-        var ids = Set<WindowID>()
+        var entries: [WindowSnapshot.Entry] = []
         for info in list {
             guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
-                  let owner = info[kCGWindowOwnerPID as String] as? Int, pid_t(owner) == pid,
-                  let number = info[kCGWindowNumber as String] as? UInt32 else { continue }
-            ids.insert(number)
+                  let number = info[kCGWindowNumber as String] as? UInt32,
+                  let owner = info[kCGWindowOwnerPID as String] as? Int,
+                  let boundsDict = info[kCGWindowBounds as String] as? NSDictionary,
+                  let bounds = CGRect(dictionaryRepresentation: boundsDict) else { continue }
+            entries.append(.init(id: number, pid: pid_t(owner), bounds: bounds))
         }
-        return ids
+        entries.sort { $0.id < $1.id }
+        return WindowSnapshot(entries: entries)
     }
 
     /// AX windows of an app with retry/backoff (just-launched apps
