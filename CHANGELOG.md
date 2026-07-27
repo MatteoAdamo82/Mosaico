@@ -5,6 +5,20 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2026-07-26
+
+### Fixed
+
+- "Ricalcola Tiling" (⌃⌥R) sometimes did nothing: the idle-CPU optimization
+  from 0.2.3 skipped reconciliation whenever the window-server snapshot was
+  unchanged — silencing the explicit command too. Manual re-tile now always
+  forces the full pass
+- Connecting a display did not re-tile: the display-change handler only
+  re-asserted the existing trees, and the windows macOS moves to the newly
+  connected monitor were never re-homed to its layout. A display change now
+  forces a full reconciliation (twice, to confirm the space relocations),
+  adopting the moved windows into the new display's tree
+
 ## [0.2.5] - 2026-07-25
 
 ### Added

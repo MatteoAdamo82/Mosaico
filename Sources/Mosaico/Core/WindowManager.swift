@@ -55,7 +55,12 @@ final class WindowManager {
         lifecycle.onDisplaysChanged = { [weak self] in
             guard let self else { return }
             self.workspaceManager.syncDisplays()
-            self.retileAll()
+            // Full pass: re-homes the windows macOS moved to the new display.
+            // A second forced pass confirms the two-pass space relocations.
+            self.reconcile(force: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                self?.reconcile(force: true)
+            }
             // A display that disappeared but did not return within the grace
             // period is a real unplug: recover its windows onto the primary. If
             // instead it is standby, it returns first and there is nothing to merge.
@@ -459,7 +464,7 @@ final class WindowManager {
     /// pass, the whole reconciliation is skipped — no AX/CGS IPC at idle.
     private var lastReconcileSnapshot: WindowDiscovery.WindowSnapshot?
 
-    private func reconcile() {
+    private func reconcile(force: Bool = false) {
         guard !isPaused, started else { return }
         guard NSEvent.pressedMouseButtons == 0 else { return }
         // A gesture just ended: its adoption is still pending, re-applying
@@ -468,8 +473,10 @@ final class WindowManager {
 
         // ONE window-server call answers "did anything change?". If not,
         // there is nothing to heal: skip all Accessibility/space IPC.
+        // `force` bypasses the shortcut: an explicit re-tile or a display
+        // change must always run the full pass.
         let snapshot = WindowDiscovery.snapshot()
-        if snapshot == lastReconcileSnapshot { return }
+        if !force, snapshot == lastReconcileSnapshot { return }
         lastReconcileSnapshot = snapshot
 
         // Post-wake grace period: only re-apply the existing tree,
@@ -594,7 +601,7 @@ final class WindowManager {
             isPaused = false
             MenuState.shared.isPaused = false
             MosaicoLog.log("recompute tiling (pause disabled)")
-            reconcile()
+            reconcile(force: true)
             return
         default:
             break
