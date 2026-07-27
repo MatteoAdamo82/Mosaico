@@ -381,8 +381,40 @@ final class WindowManager {
 
         for id in toRemove {
             MosaicoLog.log("removed ghost [\(id)] (off screen)")
-            remove(windowID: id)
+            removeOrSubstitute(id)
         }
+    }
+
+    /// Before collapsing a dead window's slot, look for a re-emerged tab
+    /// sibling: a window of the same app, not yet managed, sitting at the
+    /// slot's frame (closing a tab reveals the host window again). If found,
+    /// it takes over the slot and the layout does not move.
+    private func removeOrSubstitute(_ id: WindowID) {
+        if let loc = workspaceManager.locate(id),
+           !loc.managed.isFloating,
+           let screen = DisplayManager.screen(withDisplayID: loc.display.displayID) {
+            let gap = CGFloat(SettingsStore.shared.settings.gap)
+            let rect = LayoutEngine.workspaceRect(for: screen)
+            if let expected = loc.workspace.tree.frames(in: rect, gap: gap)[id] {
+                let pid = loc.managed.window.pid
+                let ax = AXApplication(pid: pid)
+                for window in ax.windows()
+                where workspaceManager.locate(window.id) == nil && runtimeExcluded[window.id] == nil {
+                    guard let f = window.frameIfReadable,
+                          abs(f.origin.x - expected.origin.x) < 8,
+                          abs(f.origin.y - expected.origin.y) < 8,
+                          abs(f.width - expected.width) < 8,
+                          abs(f.height - expected.height) < 8,
+                          RulesEngine.disposition(for: window, bundleID: ax.bundleID) == .tile
+                    else { continue }
+                    MosaicoLog.log("tab twin back: [\(window.id)] takes over slot of dead [\(id)]")
+                    loc.workspace.replace(oldID: id, with: ManagedWindow(window: window))
+                    refreshMenuSnapshot()
+                    return
+                }
+            }
+        }
+        remove(windowID: id)
     }
 
     /// Removes windows whose AXUIElement no longer responds.
@@ -405,7 +437,7 @@ final class WindowManager {
         }
         for id in toRemove {
             MosaicoLog.log("removed invalid [\(id)]")
-            remove(windowID: id)
+            removeOrSubstitute(id)
         }
     }
 
@@ -999,13 +1031,24 @@ final class WindowManager {
 
     /// Live preview during the drag: highlights the drop zone.
     func updateDropPreview(at point: CGPoint) {
-        guard !isPaused,
-              let source = findDragSource(at: point),
-              let resolution = resolveDrop(source: source, at: point) else {
+        guard !isPaused, let source = findDragSource(at: point) else {
             DropZoneOverlay.shared.hide()
             return
         }
-        DropZoneOverlay.shared.show(axRect: resolution.highlight)
+        if let resolution = resolveDrop(source: source, at: point) {
+            DropZoneOverlay.shared.show(axRect: resolution.highlight)
+            return
+        }
+        // Empty area of another display: the drop will migrate the window
+        // there — highlight the whole destination workspace.
+        if let dropScreen = DisplayManager.screen(containingAX: point),
+           let sourceLoc = workspaceManager.locate(source.id),
+           let sourceScreen = DisplayManager.screen(withDisplayID: sourceLoc.display.displayID),
+           dropScreen != sourceScreen {
+            DropZoneOverlay.shared.show(axRect: LayoutEngine.workspaceRect(for: dropScreen))
+            return
+        }
+        DropZoneOverlay.shared.hide()
     }
 
     func endDropPreview() {
@@ -1021,6 +1064,24 @@ final class WindowManager {
               !source.isFloating else { return }
 
         guard let resolution = resolveDrop(source: source, at: point) else {
+            // No target window under the drop point. If the drop landed on
+            // ANOTHER display, migrate there (appended to its tree): users
+            // expect dragging to an empty area of the other monitor to move
+            // the window, not to snap it back.
+            if let dropScreen = DisplayManager.screen(containingAX: point),
+               let sourceScreen = DisplayManager.screen(withDisplayID: sourceLoc.display.displayID),
+               dropScreen != sourceScreen {
+                let destination = workspaceManager.activeWorkspace(for: dropScreen)
+                sourceLoc.workspace.remove(source.id)
+                applyLayoutIfVisible(sourceLoc.workspace)
+                destination.add(source, near: nil, leafRect: { [weak self] id in
+                    self?.frameOfLeaf(id, in: destination)
+                })
+                MosaicoLog.log("drop [\(source.id)] migrated to display \(DisplayManager.displayID(of: dropScreen))")
+                applyLayout(workspace: destination, screen: dropScreen)
+                refreshMenuSnapshot()
+                return
+            }
             MosaicoLog.log("drop [\(source.id)] no target → snap back")
             applyLayoutIfVisible(sourceLoc.workspace)
             return

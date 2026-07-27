@@ -5,6 +5,21 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-07-25
+
+### Added
+
+- Dragging a window onto an empty area of another display now moves it to
+  that display's layout (appended to its tree), with the destination
+  workspace highlighted during the drag. Previously only dropping on top of
+  another window migrated across displays; empty-area drops snapped back
+
+### Fixed
+
+- Closing a tab no longer moves the revealed host window to a different
+  slot: before a dead window's slot is collapsed, a re-emerged tab sibling
+  (same app, same frame) takes it over in place
+
 ## [0.2.4] - 2026-07-25
 
 ### Fixed
