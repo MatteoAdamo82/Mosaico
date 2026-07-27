@@ -36,6 +36,14 @@ final class Workspace {
         return windows.removeValue(forKey: id)
     }
 
+    /// Swaps the occupant of a tile slot without changing the layout
+    /// (macOS tab took over its host window's place).
+    func replace(oldID: WindowID, with managed: ManagedWindow) {
+        windows.removeValue(forKey: oldID)
+        windows[managed.id] = managed
+        tree.rename(oldID, to: managed.id)
+    }
+
     func setFloating(_ id: WindowID, _ floating: Bool) {
         guard let managed = windows[id] else { return }
         managed.isFloating = floating

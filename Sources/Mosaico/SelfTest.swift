@@ -269,6 +269,18 @@ enum SelfTest {
                   "degenerate frame is not adopted")
         }
 
+        // Rename keeps the geometry (macOS tab takes over a slot)
+        do {
+            let tree = BSPTree()
+            tree.insert(1, near: nil, leafRect: liveRect(tree))
+            tree.insert(2, near: 1, leafRect: liveRect(tree))
+            let before = tree.frames(in: rect, gap: 0)
+            tree.rename(2, to: 99)
+            let after = tree.frames(in: rect, gap: 0)
+            check(after[99] == before[2] && after[2] == nil && after[1] == before[1],
+                  "rename replaces the occupant without moving the layout")
+        }
+
         // Preset without duplicates
         do {
             let keys = KeyBinding.defaultPreset.map { "\($0.keyCode)-\($0.carbonModifiers)" }

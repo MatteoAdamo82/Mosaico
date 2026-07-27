@@ -174,6 +174,26 @@ final class WindowManager {
             return
         }
 
+        // macOS tabs: each tab is a separate AXWindow that shares the frame
+        // of the window hosting the tab group. Adopting it as a new tile
+        // would halve the host (e.g. ⌘T in Finder). If a tiled window of the
+        // same app sits at (nearly) the same frame, the new tab takes over
+        // its slot instead — the layout does not move.
+        if let newFrame = window.frameIfReadable,
+           let twin = workspace.windows.values.first(where: { candidate in
+               guard !candidate.isFloating, candidate.window.pid == window.pid,
+                     let f = candidate.window.frameIfReadable else { return false }
+               return abs(f.origin.x - newFrame.origin.x) < 4
+                   && abs(f.origin.y - newFrame.origin.y) < 4
+                   && abs(f.width - newFrame.width) < 4
+                   && abs(f.height - newFrame.height) < 4
+           }) {
+            MosaicoLog.log("tab twin: [\(window.id)] takes over slot of [\(twin.id)]")
+            workspace.replace(oldID: twin.id, with: managed)
+            refreshMenuSnapshot()
+            return
+        }
+
         workspace.add(managed, near: insertionAnchor(in: workspace, excluding: window.id), leafRect: { [weak self] id in
             self?.frameOfLeaf(id, in: workspace)
         })

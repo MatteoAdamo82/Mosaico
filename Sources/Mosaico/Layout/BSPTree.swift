@@ -100,6 +100,12 @@ final class BSPTree {
         parent.second?.parent = parent
     }
 
+    /// Replaces the window occupying a leaf, leaving the geometry untouched
+    /// (used for macOS tabs: the new tab takes over the host's slot).
+    func rename(_ oldID: WindowID, to newID: WindowID) {
+        leaf(for: oldID)?.windowID = newID
+    }
+
     func swap(_ a: WindowID, _ b: WindowID) {
         guard let la = leaf(for: a), let lb = leaf(for: b) else { return }
         la.windowID = b
