@@ -5,6 +5,18 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-07-26
+
+### Fixed
+
+- Dragging a window to the other monitor left it stuck in the original
+  display's layout (and it snapped back). Two related causes: macOS adjusts
+  a window's size while it crosses screens with different resolutions, so
+  the gesture failed the "same size = drag" check and was instead adopted as
+  a resize into the origin display's tree. Drag candidates now remember
+  their origin display: a window that ends up on another display is always
+  treated as a migration to that display's layout, never as a resize
+
 ## [0.2.6] - 2026-07-26
 
 ### Fixed

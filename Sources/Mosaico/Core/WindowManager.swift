@@ -1004,6 +1004,14 @@ final class WindowManager {
               !loc.managed.isFloating, !loc.managed.isZoomed,
               let actual = loc.managed.window.frameIfReadable else { return nil }
 
+        // Crossing to another display counts as a drag even if macOS
+        // adjusted the size (different resolutions/menubar between screens).
+        let center = CGPoint(x: actual.midX, y: actual.midY)
+        if let currentScreen = DisplayManager.screen(containingAX: center),
+           DisplayManager.displayID(of: currentScreen) != candidate.displayID {
+            return loc.managed
+        }
+
         let sameSize = abs(actual.width - candidate.originalFrame.width) < 10
             && abs(actual.height - candidate.originalFrame.height) < 10
         let moved = hypot(actual.origin.x - candidate.originalFrame.origin.x,
@@ -1127,6 +1135,7 @@ final class WindowManager {
     private struct DragCandidate {
         let id: WindowID
         let originalFrame: CGRect
+        let displayID: CGDirectDisplayID
     }
     /// Windows near the mouse-down point, with their frames at that moment.
     /// Several, because an edge resize starts ON the border: the point
@@ -1153,10 +1162,11 @@ final class WindowManager {
         // the one containing it (a move) plus the neighbors sharing the
         // border under the cursor (an edge resize).
         let reach: CGFloat = CGFloat(SettingsStore.shared.settings.gap) + 12
+        let originDisplay = DisplayManager.displayID(of: screen)
         for (id, managed) in workspace.windows where !managed.isFloating && !managed.isZoomed {
             guard let frame = managed.window.frameIfReadable,
                   frame.insetBy(dx: -reach, dy: -reach).contains(point) else { continue }
-            dragCandidates.append(DragCandidate(id: id, originalFrame: frame))
+            dragCandidates.append(DragCandidate(id: id, originalFrame: frame, displayID: originDisplay))
         }
         // Containing window first: it is the one being moved, if any
         dragCandidates.sort { a, _ in a.originalFrame.contains(point) }
@@ -1176,6 +1186,33 @@ final class WindowManager {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             guard let self, !self.isPaused, NSEvent.pressedMouseButtons == 0 else { return }
+
+            // A window that ended up on ANOTHER display was dragged there:
+            // migrate it to that display's tree. Never treat it as a resize —
+            // macOS adjusts the size while crossing screens with different
+            // resolutions, and adopting that delta corrupts the origin tree.
+            for candidate in candidates {
+                guard let loc = self.workspaceManager.locate(candidate.id),
+                      !loc.managed.isFloating, !loc.managed.isZoomed,
+                      let actual = loc.managed.window.frameIfReadable else { continue }
+                let center = CGPoint(x: actual.midX, y: actual.midY)
+                guard let destScreen = DisplayManager.screen(containingAX: center),
+                      DisplayManager.displayID(of: destScreen) != candidate.displayID else { continue }
+
+                let destination = self.workspaceManager.activeWorkspace(for: destScreen)
+                // handlePlainDrop may have already migrated it
+                guard destination !== loc.workspace else { return }
+
+                loc.workspace.remove(candidate.id)
+                self.applyLayoutIfVisible(loc.workspace)
+                destination.add(loc.managed, near: nil, leafRect: { [weak self] id in
+                    self?.frameOfLeaf(id, in: destination)
+                })
+                MosaicoLog.log("dragEnd: [\(candidate.id)] migrated to display \(DisplayManager.displayID(of: destScreen))")
+                self.applyLayout(workspace: destination, screen: destScreen)
+                self.refreshMenuSnapshot()
+                return
+            }
 
             // Among the windows near the mouse-down point, take the one
             // whose SIZE actually changed: that is the resized one, whatever
