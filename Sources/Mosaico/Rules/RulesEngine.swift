@@ -18,7 +18,9 @@ struct WindowTraits {
     var hasWindowParent = false
     var isFullscreen = false
     var isMinimized = false
+    var isModal = false
     var cgLayer = 0
+    var size: CGSize?
 }
 
 /// Decides how to treat a window: tile, float or ignore.
@@ -78,6 +80,11 @@ enum RulesEngine {
             return .ignore
         }
 
+        // Modal dialogs never belong in the tree, whatever their subrole
+        if traits.isModal {
+            return .float
+        }
+
         switch subrole {
         case "AXDialog", "AXSystemDialog", "AXFloatingWindow":
             return .float
@@ -85,6 +92,12 @@ enum RulesEngine {
             // Fixed-size or non-movable window (popups, palettes,
             // transient windows): float — tiling them squeezes the others for nothing
             guard traits.isResizable, traits.isMovable else { return .float }
+            // Small windows are dialogs in disguise: copy-progress panels
+            // and the like often claim to be standard resizable windows.
+            // Nothing this small is worth a tile.
+            if let size = traits.size, size.width < 350 || size.height < 220 {
+                return .float
+            }
             return .tile
         default:
             // Empty or unknown subrole: float if role is also empty or AXSheet
@@ -107,7 +120,9 @@ enum RulesEngine {
                                   hasWindowParent: window.hasWindowParent,
                                   isFullscreen: window.isFullscreen,
                                   isMinimized: window.isMinimized,
-                                  cgLayer: window.cgLayer)
+                                  isModal: window.isModal,
+                                  cgLayer: window.cgLayer,
+                                  size: window.frameIfReadable?.size)
         return disposition(traits: traits,
                            excludedBundleIDs: settings.excludedBundleIDs,
                            excludedWindowRules: settings.excludedWindowRules)

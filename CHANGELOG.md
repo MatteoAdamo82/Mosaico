@@ -5,6 +5,19 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.8] - 2026-07-26
+
+### Fixed
+
+- Dialogs and progress windows (file copies and the like) sometimes entered
+  the tiling. Three defenses:
+  - Modal windows (`AXModal`) always float, whatever subrole they claim
+  - Small windows (narrower than 350pt or shorter than 220pt) float: copy
+    progress panels present themselves as standard resizable windows and
+    were indistinguishable by role alone
+  - Newly created windows get 300ms to settle before their traits are read
+    (a dialog read too early looks like a standard window)
+
 ## [0.2.7] - 2026-07-26
 
 ### Fixed

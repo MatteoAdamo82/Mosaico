@@ -45,6 +45,11 @@ final class AXWindow {
         (copyAttribute(kAXMinimizedAttribute) as? Bool) ?? false
     }
 
+    /// Modal windows (blocking dialogs) must never be tiled.
+    var isModal: Bool {
+        (copyAttribute("AXModal") as? Bool) ?? false
+    }
+
     var isFullscreen: Bool {
         (copyAttribute("AXFullScreen") as? Bool) ?? false
     }

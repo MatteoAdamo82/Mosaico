@@ -259,8 +259,11 @@ final class WindowManager {
         case kAXWindowCreatedNotification:
             guard let window = AXWindow(element: element, pid: pid) else { return }
             let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
-            // Small delay: right after creation role/subrole are sometimes not ready
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            // Settle delay: right after creation role/subrole/modal are often
+            // not ready yet, and a dialog read too early looks like a
+            // standard window and gets tiled. 300ms is imperceptible for a
+            // real window and enough for AX to expose the true traits.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 self?.manage(window: window, bundleID: bundleID)
             }
 

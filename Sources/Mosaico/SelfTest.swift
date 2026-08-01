@@ -248,6 +248,11 @@ enum SelfTest {
                        rules: [WindowRule(bundleID: "com.x", title: "T")]) == .ignore,
                   "rules: excluded window → ignore")
             check(disp(traits { $0.hasWindowParent = true }) == .ignore, "rules: attached sheet → ignore")
+            check(disp(traits { $0.isModal = true }) == .float, "rules: modal → float")
+            check(disp(traits { $0.size = CGSize(width: 450, height: 160) }) == .float,
+                  "rules: small window (copy dialog) → float")
+            check(disp(traits { $0.size = CGSize(width: 900, height: 600) }) == .tile,
+                  "rules: normal-sized standard window → tile")
         }
 
         // Shortcut rendering
