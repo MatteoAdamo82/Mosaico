@@ -30,10 +30,15 @@ the terminal-heavy setup those tools require.
   fully rebindable from the settings window
 - **Mouse support** — pointer follows focus (optional); ⌥+drag moves,
   ⌥+right-drag resizes; move a window to another space with ⇧⌥1…7
-- **Smart rules** — dialogs, sheets, picture-in-picture and non-resizable
-  windows float automatically and stay above the tiled layout; exclude
-  whole apps or single windows from tiling via the menubar (excluded
-  windows show a checkmark and can be toggled back at any time)
+- **Multi-display** — drag a window onto another monitor (onto a window or
+  an empty area) and it joins that display's layout; focus/move-to-display
+  commands adapt to any monitor arrangement (side by side or stacked); the
+  layout self-heals across display connects, disconnects and sleep/wake
+- **Smart rules** — dialogs, sheets, modal and progress windows,
+  picture-in-picture and non-resizable windows float automatically and stay
+  above the tiled layout; macOS tabs share their host window's tile instead
+  of splitting it; exclude whole apps or single windows from tiling via the
+  menubar (excluded windows show a checkmark and can be toggled back)
 - **GUI settings** — gaps, shortcuts recorder, exclusions; persisted as JSON.
   Launch at login is a toggle in both the menubar and Settings
 
@@ -140,10 +145,11 @@ addition.
 
 ## Development status
 
-**Early development (0.1.x).** The app is my daily driver and the core is
-stable: tiling, native-Spaces handling, hotkeys, drop zones and the settings
-UI all work. Expect rough edges around less common window types and
-multi-display setups.
+**Early development (0.2.x).** The app is my daily driver and the core is
+stable: tiling, native-Spaces handling, multi-display, hotkeys, drop zones
+and the settings UI all work, and the layout self-heals after sleep/wake
+and display changes. Expect occasional rough edges around less common
+window types.
 
 Current UI language is Italian; localization is on the roadmap.
 
@@ -165,7 +171,7 @@ Current UI language is Italian; localization is on the roadmap.
       and the permission re-prompts)
 - [ ] Homebrew cask
 - [ ] English localization of the UI
-- [ ] Better multi-display support (per-display rules, display-aware presets)
+- [ ] Per-display configuration (rules and presets per monitor)
 - [ ] Configurable auto-float rules from the GUI
 - [ ] Optional window borders / focus highlight
 - [ ] Layout presets (columns, monocle) alongside BSP
