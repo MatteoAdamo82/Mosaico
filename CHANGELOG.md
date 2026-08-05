@@ -5,6 +5,19 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.9] - 2026-07-26
+
+### Fixed
+
+- Connecting another monitor could break tiling entirely: a display
+  reconfiguration can kill an app's accessibility connection, leaving
+  Mosaico holding a dead window handle that still owned half the layout —
+  every pass tried to place a window it could not even read ("stubborn …
+  keeps (0,0,0,0)" in the log). Broken handles are now detected (confirmed
+  across two passes), re-resolved against the owning app by window id, or —
+  if the app no longer exposes the window — their slot is freed so the
+  layout recovers on its own
+
 ## [0.2.8] - 2026-07-26
 
 ### Fixed

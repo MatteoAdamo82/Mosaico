@@ -393,6 +393,42 @@ final class WindowManager {
         }
     }
 
+    /// Windows whose AX handle failed a frame read once: healed or freed
+    /// only if still broken on the next pass.
+    private var pendingBrokenHandles = Set<WindowID>()
+
+    /// An AX handle can die while its window survives — typical after a
+    /// display reconfiguration, when the app's accessibility connection
+    /// resets. The model then holds a slot it can never place, and half the
+    /// screen stays reserved forever ("stubborn ... keeps (0,0,0,0)").
+    /// Confirmed over two passes: re-resolve a fresh handle by CGWindowID,
+    /// or free the slot (the window returns via adoption when readable).
+    private func healBrokenHandles() {
+        var stillBroken = Set<WindowID>()
+        for screen in NSScreen.screens {
+            let workspace = workspaceManager.activeWorkspace(for: screen)
+            for (id, managed) in workspace.windows where !managed.isFloating {
+                guard managed.window.frameIfReadable == nil else { continue }
+                guard pendingBrokenHandles.contains(id) else {
+                    stillBroken.insert(id)
+                    continue
+                }
+                let pid = managed.window.pid
+                if let fresh = AXApplication(pid: pid).windows().first(where: { $0.id == id }) {
+                    let replacement = ManagedWindow(window: fresh)
+                    replacement.isFloating = managed.isFloating
+                    replacement.isZoomed = managed.isZoomed
+                    workspace.windows[id] = replacement
+                    MosaicoLog.log("healed AX handle [\(id)]")
+                } else {
+                    MosaicoLog.log("dead AX handle [\(id)] → slot freed")
+                    remove(windowID: id)
+                }
+            }
+        }
+        pendingBrokenHandles = stillBroken
+    }
+
     /// Before collapsing a dead window's slot, look for a re-emerged tab
     /// sibling: a window of the same app, not yet managed, sitting at the
     /// slot's frame (closing a tab reveals the host window again). If found,
@@ -495,6 +531,7 @@ final class WindowManager {
         pruneInvalidWindows()
         pruneMinimizedWindows()
         pruneGhostWindows(onScreen: snapshot.ids)
+        healBrokenHandles()
 
         // 2. Relocate windows moved to another native space
         //    (e.g. dragged in Mission Control). Only if the space change
