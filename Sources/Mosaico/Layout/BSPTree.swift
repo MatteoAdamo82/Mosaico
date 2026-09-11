@@ -56,7 +56,7 @@ final class BSPTree {
     // MARK: - Mutations
 
     /// Inserts next to leaf `near` (usually the focused window);
-    /// if nil, next to the last leaf. The leaf's `rect` is used to
+    /// if nil, next to the shallowest leaf. The leaf's `rect` is used to
     /// choose the orientation (long side).
     func insert(_ id: WindowID, near: WindowID?, leafRect: (WindowID) -> CGRect?) {
         guard let root else {
@@ -65,7 +65,7 @@ final class BSPTree {
         }
         guard !contains(id) else { return }
 
-        let target: BSPNode = near.flatMap { leaf(for: $0) } ?? lastLeaf(of: root)
+        let target: BSPNode = near.flatMap { leaf(for: $0) } ?? shallowestLeaf(of: root)
 
         let oldLeaf = BSPNode(windowID: target.windowID!)
         let newLeaf = BSPNode(windowID: id)
@@ -335,11 +335,23 @@ final class BSPTree {
         }
     }
 
-    private func lastLeaf(of node: BSPNode) -> BSPNode {
-        var current = node
-        while let second = current.second {
-            current = second
+    /// With no anchor, split the shallowest leaf. Appending to the last
+    /// leaf every time builds a comb: each new window halves the previous
+    /// one, and by the eighth the slots are a few pixels wide — apps refuse
+    /// them and the layout looks frozen. The shallowest leaf keeps the
+    /// tree balanced whatever the count (last one wins on ties, so a fresh
+    /// space still fills in reading order).
+    private func shallowestLeaf(of node: BSPNode) -> BSPNode {
+        var best: (leaf: BSPNode, depth: Int)?
+        func walk(_ n: BSPNode, depth: Int) {
+            if n.windowID != nil {
+                if best == nil || depth <= best!.depth { best = (n, depth) }
+                return
+            }
+            if let first = n.first { walk(first, depth: depth + 1) }
+            if let second = n.second { walk(second, depth: depth + 1) }
         }
-        return current
+        walk(node, depth: 0)
+        return best?.leaf ?? node
     }
 }

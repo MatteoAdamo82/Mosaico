@@ -31,6 +31,18 @@ enum SelfTest {
             check(frames[1]!.origin.x == 0 && frames[2]!.origin.x == 500, "insert second_child")
         }
 
+        // No anchor: balanced insertion, never a comb. Eight windows in
+        // 1000x600 must all get a slot of a sane size (a comb would leave
+        // the last one 8pt wide).
+        do {
+            let tree = BSPTree()
+            for id in 1...8 { tree.insert(WindowID(id), near: nil, leafRect: liveRect(tree)) }
+            let frames = tree.frames(in: rect, gap: 0)
+            let smallest = frames.values.map { min($0.width, $0.height) }.min() ?? 0
+            check(frames.count == 8 && smallest >= 150,
+                  "insert without anchor stays balanced (min side \(Int(smallest)))")
+        }
+
         // Orientation from the long side: 500x600 leaf → vertical split
         do {
             let tree = BSPTree()

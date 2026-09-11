@@ -17,7 +17,7 @@ enum Diagnostics {
         for app in WindowDiscovery.tileableApps() {
             let ax = AXApplication(pid: app.processIdentifier)
             let ready = ax.isReady
-            let windows = ax.windows()
+            let windows = ax.windows() ?? []
             print("\napp \(app.localizedName ?? "?") [\(app.bundleIdentifier ?? "?")] pid=\(app.processIdentifier) ready=\(ready) windows=\(windows.count)")
             for w in windows {
                 let disp = RulesEngine.disposition(for: w, bundleID: app.bundleIdentifier)

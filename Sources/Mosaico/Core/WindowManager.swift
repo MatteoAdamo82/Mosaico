@@ -29,13 +29,58 @@ final class WindowManager {
 
     private init() {}
 
+    // MARK: - Display changes
+
+    /// A display reconfiguration arrives as a burst of notifications over
+    /// a few seconds, while every app is busy relaying out its windows.
+    /// Reconciling on each one meant several full Accessibility sweeps
+    /// against unresponsive apps — the freeze users saw when plugging a
+    /// monitor. Wait for the burst to end, then run one pass (plus a
+    /// confirmation pass for the two-step space relocations).
+    private var displayChangeWork: DispatchWorkItem?
+
+    private func scheduleDisplayChangeReconcile() {
+        displayChangeWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            MosaicoLog.log("displays settled: \(NSScreen.screens.count) screen(s)")
+            self.reconcile(force: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                self?.reconcile(force: true)
+            }
+        }
+        displayChangeWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+    }
+
+    /// Windows whose traits could not be read yet, with the attempt count.
+    private var manageRetries: [WindowID: Int] = [:]
+
+    /// Apps poked for a lazy AX tree, and when. Some apps keep one
+    /// on-screen window that Accessibility never exposes (helper panels,
+    /// hotkey windows): poking them on every pass is wasted IPC and noise.
+    private var lastPoke: [pid_t: Date] = [:]
+
+    private func pokeIfDue(_ ax: AXApplication, name: String, count: Int) {
+        let now = Date()
+        if let last = lastPoke[ax.pid], now.timeIntervalSince(last) < 300 { return }
+        lastPoke[ax.pid] = now
+        MosaicoLog.log("AX gap: \(name) has \(count) on-screen windows, AX reports none — poking")
+        ax.pokeManualAccessibility()
+    }
+
     // MARK: - Lifecycle
 
     func start() {
         guard !started else { return }
         started = true
 
-        workspaceManager.syncDisplays()
+        // Accessibility calls block the caller until the target app answers
+        // (default: six seconds). One busy app — typical while displays
+        // reconfigure — would freeze every layout pass, hotkey and drop
+        // preview for seconds at a time. Half a second is plenty for a
+        // window attribute, and every read path tolerates a failed call.
+        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.5)
 
         // AX events
         observerCenter.onEvent = { [weak self] pid, notification, element in
@@ -53,22 +98,7 @@ final class WindowManager {
             self?.handleAppActivated(app)
         }
         lifecycle.onDisplaysChanged = { [weak self] in
-            guard let self else { return }
-            self.workspaceManager.syncDisplays()
-            // Full pass: re-homes the windows macOS moved to the new display.
-            // A second forced pass confirms the two-pass space relocations.
-            self.reconcile(force: true)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-                self?.reconcile(force: true)
-            }
-            // A display that disappeared but did not return within the grace
-            // period is a real unplug: recover its windows onto the primary. If
-            // instead it is standby, it returns first and there is nothing to merge.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
-                guard let self else { return }
-                self.workspaceManager.mergeStaleDetached()
-                self.retileAll()
-            }
+            self?.scheduleDisplayChangeReconcile()
         }
         lifecycle.onSpaceChanged = { [weak self] in
             self?.handleSpaceChanged()
@@ -156,16 +186,33 @@ final class WindowManager {
             return
         }
 
+        // A window whose frame cannot be read is not ours to place: it sits
+        // on another space, or its app is busy. Guessing a space for it
+        // (the visible one) is how whole trees got filled with windows
+        // that were never there. Reconciliation adopts it once readable.
+        guard let frame = window.frameIfReadable,
+              let screen = DisplayManager.screen(containingAX: frame) else { return }
+
+        // Traits unreadable (app busy): decide later rather than wrongly —
+        // an unreadable role would float a perfectly normal window
+        if window.role == nil {
+            let attempts = (manageRetries[window.id] ?? 0) + 1
+            manageRetries[window.id] = attempts
+            if attempts <= 4 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    self?.manage(window: window, bundleID: bundleID)
+                }
+            }
+            return
+        }
+        manageRetries[window.id] = nil
+
         let disposition = RulesEngine.disposition(for: window, bundleID: bundleID)
         guard disposition != .ignore else { return }
 
-        guard let screen = DisplayManager.screen(containingAX: window.frame) else { return }
-        let displayID = DisplayManager.displayID(of: screen)
-        let spaceID = SpaceTracker.space(of: window.id)
-            ?? SpaceTracker.currentSpace(for: screen) ?? 0
-
-        let spaceState = workspaceManager.spaceState(displayID: displayID, spaceID: spaceID)
-        let workspace = spaceState.workspace
+        let spaceID = SpaceTracker.space(of: window.id) ?? SpaceTracker.currentSpace(for: screen)
+        let key = workspaceManager.key(space: spaceID, on: screen)
+        let workspace = workspaceManager.spaceState(for: key).workspace
 
         let managed = ManagedWindow(window: window)
 
@@ -184,8 +231,8 @@ final class WindowManager {
         // would halve the host (e.g. ⌘T in Finder). If a tiled window of the
         // same app sits at (nearly) the same frame, the new tab takes over
         // its slot instead — the layout does not move.
-        if let newFrame = window.frameIfReadable,
-           let twin = workspace.windows.values.first(where: { candidate in
+        let newFrame = frame
+        if let twin = workspace.windows.values.first(where: { candidate in
                guard !candidate.isFloating, candidate.window.pid == window.pid,
                      let f = candidate.window.frameIfReadable else { return false }
                return abs(f.origin.x - newFrame.origin.x) < 4
@@ -202,7 +249,7 @@ final class WindowManager {
         workspace.add(managed, near: insertionAnchor(in: workspace, excluding: window.id), leafRect: { [weak self] id in
             self?.frameOfLeaf(id, in: workspace)
         })
-        MosaicoLog.log("manage [\(window.id)] '\(window.title ?? "?")' → space \(spaceID) (n=\(workspace.tree.count))")
+        MosaicoLog.log("manage [\(window.id)] '\(window.title ?? "?")' → space \(key.space) (n=\(workspace.tree.count))")
         applyLayout(workspace: workspace, screen: screen)
         refreshMenuSnapshot()
     }
@@ -227,14 +274,12 @@ final class WindowManager {
         // The runtime exclusions of the terminated app are no longer needed
         runtimeExcluded = runtimeExcluded.filter { $0.value.managed.window.pid != pid }
         var touched: [Workspace] = []
-        for (_, display) in workspaceManager.displays {
-            for (_, spaceState) in display.spaces {
-                let ws = spaceState.workspace
-                let ids = ws.windows.values.filter { $0.window.pid == pid }.map(\.id)
-                guard !ids.isEmpty else { continue }
-                for id in ids { ws.remove(id) }
-                touched.append(ws)
-            }
+        for (_, spaceState) in workspaceManager.spaces {
+            let ws = spaceState.workspace
+            let ids = ws.windows.values.filter { $0.window.pid == pid }.map(\.id)
+            guard !ids.isEmpty else { continue }
+            for id in ids { ws.remove(id) }
+            touched.append(ws)
         }
         for ws in touched {
             applyLayoutIfVisible(ws)
@@ -338,7 +383,6 @@ final class WindowManager {
         for delay in [1.0, 2.5, 5.0] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, !self.isPaused else { return }
-                self.workspaceManager.syncDisplays()
                 self.retileAll()
             }
         }
@@ -348,12 +392,10 @@ final class WindowManager {
     /// reconciliation re-applies a frame to them and brings them back on screen.
     private func pruneMinimizedWindows() {
         var toRemove: [WindowID] = []
-        for (_, display) in workspaceManager.displays {
-            for (_, spaceState) in display.spaces {
-                for (id, managed) in spaceState.workspace.windows
-                where !managed.isFloating && managed.window.isMinimized {
-                    toRemove.append(id)
-                }
+        for (_, spaceState) in workspaceManager.spaces {
+            for (id, managed) in spaceState.workspace.windows
+            where !managed.isFloating && managed.window.isMinimized {
+                toRemove.append(id)
             }
         }
         for id in toRemove {
@@ -414,7 +456,13 @@ final class WindowManager {
                     continue
                 }
                 let pid = managed.window.pid
-                if let fresh = AXApplication(pid: pid).windows().first(where: { $0.id == id }) {
+                // An app that does not answer at all is busy, not gone:
+                // keep waiting rather than freeing slots it still owns
+                guard let list = AXApplication(pid: pid).windows() else {
+                    stillBroken.insert(id)
+                    continue
+                }
+                if let fresh = list.first(where: { $0.id == id }) {
                     let replacement = ManagedWindow(window: fresh)
                     replacement.isFloating = managed.isFloating
                     replacement.isZoomed = managed.isZoomed
@@ -436,13 +484,13 @@ final class WindowManager {
     private func removeOrSubstitute(_ id: WindowID) {
         if let loc = workspaceManager.locate(id),
            !loc.managed.isFloating,
-           let screen = DisplayManager.screen(withDisplayID: loc.display.displayID) {
+           let screen = workspaceManager.screen(showing: loc.key) {
             let gap = CGFloat(SettingsStore.shared.settings.gap)
             let rect = LayoutEngine.workspaceRect(for: screen)
             if let expected = loc.workspace.tree.frames(in: rect, gap: gap)[id] {
                 let pid = loc.managed.window.pid
                 let ax = AXApplication(pid: pid)
-                for window in ax.windows()
+                for window in ax.windows() ?? []
                 where workspaceManager.locate(window.id) == nil && runtimeExcluded[window.id] == nil {
                     guard let f = window.frameIfReadable,
                           abs(f.origin.x - expected.origin.x) < 8,
@@ -471,12 +519,10 @@ final class WindowManager {
         // wake) and must NOT be removed. Remove only what has really disappeared.
         let existing = WindowDiscovery.allWindowIDs()
         var toRemove: [WindowID] = []
-        for (_, display) in workspaceManager.displays {
-            for (_, spaceState) in display.spaces {
-                for (id, managed) in spaceState.workspace.windows
-                where !managed.window.isValid && !existing.contains(id) {
-                    toRemove.append(id)
-                }
+        for (_, spaceState) in workspaceManager.spaces {
+            for (id, managed) in spaceState.workspace.windows
+            where !managed.window.isValid && !existing.contains(id) {
+                toRemove.append(id)
             }
         }
         for id in toRemove {
@@ -517,6 +563,7 @@ final class WindowManager {
         let snapshot = WindowDiscovery.snapshot()
         if !force, snapshot == lastReconcileSnapshot { return }
         lastReconcileSnapshot = snapshot
+        let started = Date()
 
         // Post-wake grace period: only re-apply the existing tree,
         // no structural change (positions stay the saved ones)
@@ -540,16 +587,14 @@ final class WindowManager {
         //    on the first hit would rebuild the trees, losing the positions.
         var currentDiffs = Set<WindowID>()
         var relocations: [(WindowID, AXWindow, String?)] = []
-        for (_, display) in workspaceManager.displays {
-            for (storedSpaceID, spaceState) in display.spaces {
-                for (id, managed) in spaceState.workspace.windows {
-                    guard let actualSpace = SpaceTracker.space(of: id),
-                          actualSpace != 0, actualSpace != storedSpaceID else { continue }
-                    currentDiffs.insert(id)
-                    if pendingRelocations.contains(id) {   // confirmed: 2nd pass
-                        let bundleID = NSRunningApplication(processIdentifier: managed.window.pid)?.bundleIdentifier
-                        relocations.append((id, managed.window, bundleID))
-                    }
+        for (key, spaceState) in workspaceManager.spaces {
+            for (id, managed) in spaceState.workspace.windows {
+                guard let actualSpace = SpaceTracker.space(of: id),
+                      actualSpace != 0, actualSpace != key.space else { continue }
+                currentDiffs.insert(id)
+                if pendingRelocations.contains(id) {   // confirmed: 2nd pass
+                    let bundleID = NSRunningApplication(processIdentifier: managed.window.pid)?.bundleIdentifier
+                    relocations.append((id, managed.window, bundleID))
                 }
             }
         }
@@ -565,9 +610,15 @@ final class WindowManager {
         //    reserve an empty tile. Windows on other spaces are adopted when
         //    that space is visited.
         let onScreenNow = snapshot.ids
+        var unresponsive = 0
         for app in WindowDiscovery.tileableApps() {
             let ax = AXApplication(pid: app.processIdentifier)
-            let axWindows = ax.windows()
+            guard let axWindows = ax.windows() else {
+                // No answer within the timeout: the app is busy. Leave it
+                // alone this pass — its windows keep their slots.
+                unresponsive += 1
+                continue
+            }
 
             if axWindows.isEmpty {
                 // Chrome/Electron lazy AX tree: the window server sees this
@@ -578,8 +629,7 @@ final class WindowManager {
                     .ids(ownedBy: app.processIdentifier)
                     .filter { workspaceManager.locate($0) == nil }
                 if !unmanagedOwned.isEmpty {
-                    MosaicoLog.log("AX gap: \(app.localizedName ?? "?") has \(unmanagedOwned.count) on-screen windows, AX reports none — poking")
-                    ax.pokeManualAccessibility()
+                    pokeIfDue(ax, name: app.localizedName ?? "?", count: unmanagedOwned.count)
                 }
                 continue
             }
@@ -596,6 +646,12 @@ final class WindowManager {
         }
 
         refreshMenuSnapshot()
+
+        // A slow pass is a freeze from the user's side: leave the evidence
+        let elapsed = Date().timeIntervalSince(started)
+        if elapsed > 0.25 || unresponsive > 0 {
+            MosaicoLog.log(String(format: "reconcile took %.0fms (unresponsive apps: %d)", elapsed * 1000, unresponsive))
+        }
     }
 
     // MARK: - Layout
@@ -609,15 +665,9 @@ final class WindowManager {
     }
 
     private func applyLayoutIfVisible(_ workspace: Workspace) {
-        guard workspaceManager.isVisible(workspace) else { return }
-        for (displayID, display) in workspaceManager.displays {
-            for (_, spaceState) in display.spaces {
-                guard spaceState.workspace === workspace,
-                      let screen = DisplayManager.screen(withDisplayID: displayID) else { continue }
-                applyLayout(workspace: workspace, screen: screen)
-                return
-            }
-        }
+        guard let key = workspaceManager.key(of: workspace),
+              let screen = workspaceManager.screen(showing: key) else { return }
+        applyLayout(workspace: workspace, screen: screen)
     }
 
     func retileAll() {
@@ -742,13 +792,13 @@ final class WindowManager {
     private func withFocusedTiled(_ body: (Workspace, NSScreen, WindowID) -> Void) {
         guard let loc = focusedLocation(),
               !loc.managed.isFloating,
-              let screen = DisplayManager.screen(withDisplayID: loc.display.displayID) else { return }
+              let screen = workspaceManager.screen(showing: loc.key) else { return }
         body(loc.workspace, screen, loc.managed.id)
     }
 
     private func withVisibleWorkspace(_ body: (Workspace, NSScreen) -> Void) {
         if let loc = focusedLocation(),
-           let screen = DisplayManager.screen(withDisplayID: loc.display.displayID),
+           let screen = workspaceManager.screen(showing: loc.key),
            workspaceManager.isVisible(loc.workspace) {
             body(loc.workspace, screen)
             return
@@ -788,7 +838,7 @@ final class WindowManager {
 
     private func focusNeighbor(_ direction: Direction) {
         guard let loc = focusedLocation(),
-              let screen = DisplayManager.screen(withDisplayID: loc.display.displayID) else { return }
+              let screen = workspaceManager.screen(showing: loc.key) else { return }
 
         if !loc.managed.isFloating,
            let neighborID = neighbor(of: loc.managed.id, in: loc.workspace, screen: screen, direction: direction),
@@ -802,7 +852,7 @@ final class WindowManager {
     private func focusDisplay(_ direction: Direction) {
         let currentScreen: NSScreen
         if let loc = focusedLocation(),
-           let screen = DisplayManager.screen(withDisplayID: loc.display.displayID) {
+           let screen = workspaceManager.screen(showing: loc.key) {
             currentScreen = screen
         } else {
             currentScreen = NSScreen.main ?? NSScreen.screens[0]
@@ -821,7 +871,7 @@ final class WindowManager {
 
     private func toggleFloat() {
         guard let loc = focusedLocation(),
-              let screen = DisplayManager.screen(withDisplayID: loc.display.displayID) else { return }
+              let screen = workspaceManager.screen(showing: loc.key) else { return }
 
         if loc.managed.isFloating {
             loc.workspace.setFloating(loc.managed.id, false)
@@ -835,7 +885,7 @@ final class WindowManager {
     private func toggleZoom() {
         guard let loc = focusedLocation(),
               !loc.managed.isFloating,
-              let screen = DisplayManager.screen(withDisplayID: loc.display.displayID) else { return }
+              let screen = workspaceManager.screen(showing: loc.key) else { return }
         loc.managed.isZoomed.toggle()
         applyLayout(workspace: loc.workspace, screen: screen)
         if loc.managed.isZoomed {
@@ -845,7 +895,7 @@ final class WindowManager {
 
     private func moveToDisplay(_ direction: Direction) {
         guard let loc = focusedLocation(),
-              let sourceScreen = DisplayManager.screen(withDisplayID: loc.display.displayID),
+              let sourceScreen = workspaceManager.screen(showing: loc.key),
               let targetScreen = DisplayManager.screen(direction, of: sourceScreen) else { return }
 
         loc.workspace.remove(loc.managed.id)
@@ -867,7 +917,7 @@ final class WindowManager {
     /// used by yabai without a scripting addition.
     private func moveToNativeSpace(_ number: Int) {
         guard let loc = focusedLocation(),
-              let screen = DisplayManager.screen(withDisplayID: loc.display.displayID),
+              let screen = workspaceManager.screen(showing: loc.key),
               let key = EventPoster.digitKeyCode(number),
               let ordinal = SpaceTracker.currentSpaceOrdinal(for: screen),
               number != ordinal.current, number <= ordinal.total else { return }
@@ -914,16 +964,14 @@ final class WindowManager {
     /// Snapshot for the menu: managed + excluded windows (with flag).
     func managedWindowsSnapshot() -> [WindowInfo] {
         var result: [WindowInfo] = []
-        for (_, display) in workspaceManager.displays {
-            for (_, spaceState) in display.spaces {
-                for (id, managed) in spaceState.workspace.windows {
-                    let app = NSRunningApplication(processIdentifier: managed.window.pid)
-                    result.append(WindowInfo(id: id,
-                                             title: managed.window.title ?? "(untitled)",
-                                             appName: app?.localizedName ?? "?",
-                                             bundleID: app?.bundleIdentifier,
-                                             isExcluded: false))
-                }
+        for (_, spaceState) in workspaceManager.spaces {
+            for (id, managed) in spaceState.workspace.windows {
+                let app = NSRunningApplication(processIdentifier: managed.window.pid)
+                result.append(WindowInfo(id: id,
+                                         title: managed.window.title ?? "(untitled)",
+                                         appName: app?.localizedName ?? "?",
+                                         bundleID: app?.bundleIdentifier,
+                                         isExcluded: false))
             }
         }
         // No isValid filter: windows on other spaces appear
@@ -1098,7 +1146,7 @@ final class WindowManager {
         // there — highlight the whole destination workspace.
         if let dropScreen = DisplayManager.screen(containingAX: point),
            let sourceLoc = workspaceManager.locate(source.id),
-           let sourceScreen = DisplayManager.screen(withDisplayID: sourceLoc.display.displayID),
+           let sourceScreen = workspaceManager.screen(showing: sourceLoc.key),
            dropScreen != sourceScreen {
             DropZoneOverlay.shared.show(axRect: LayoutEngine.workspaceRect(for: dropScreen))
             return
@@ -1124,7 +1172,7 @@ final class WindowManager {
             // expect dragging to an empty area of the other monitor to move
             // the window, not to snap it back.
             if let dropScreen = DisplayManager.screen(containingAX: point),
-               let sourceScreen = DisplayManager.screen(withDisplayID: sourceLoc.display.displayID),
+               let sourceScreen = workspaceManager.screen(showing: sourceLoc.key),
                dropScreen != sourceScreen {
                 let destination = workspaceManager.activeWorkspace(for: dropScreen)
                 sourceLoc.workspace.remove(source.id)
@@ -1261,7 +1309,7 @@ final class WindowManager {
                 guard let loc = self.workspaceManager.locate(candidate.id),
                       !loc.managed.isFloating, !loc.managed.isZoomed,
                       self.workspaceManager.isVisible(loc.workspace),
-                      let screen = DisplayManager.screen(withDisplayID: loc.display.displayID),
+                      let screen = workspaceManager.screen(showing: loc.key),
                       let actual = loc.managed.window.frameIfReadable else { continue }
 
                 let resized = abs(actual.width - candidate.originalFrame.width) > 6
@@ -1284,7 +1332,7 @@ final class WindowManager {
             // snaps back into its slot.
             if let first = candidates.first,
                let loc = self.workspaceManager.locate(first.id),
-               let screen = DisplayManager.screen(withDisplayID: loc.display.displayID),
+               let screen = workspaceManager.screen(showing: loc.key),
                let actual = loc.managed.window.frameIfReadable,
                !LayoutEngine.rectsEqual(actual, first.originalFrame) {
                 self.applyLayout(workspace: loc.workspace, screen: screen)
@@ -1329,7 +1377,7 @@ final class WindowManager {
 
     func adjustRatio(for managed: ManagedWindow, delta: CGVector) {
         guard let loc = workspaceManager.locate(managed.id),
-              let screen = DisplayManager.screen(withDisplayID: loc.display.displayID),
+              let screen = workspaceManager.screen(showing: loc.key),
               let leaf = loc.workspace.tree.leaf(for: managed.id) else { return }
 
         let rect = LayoutEngine.workspaceRect(for: screen)

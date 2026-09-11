@@ -26,7 +26,12 @@ enum SpaceTracker {
 
     /// Current native space of the given display.
     static func currentSpace(for screen: NSScreen) -> NativeSpaceID? {
-        let spaces = activeSpacesByDisplay()
+        currentSpace(for: screen, in: activeSpacesByDisplay())
+    }
+
+    /// Same, against an already fetched display→space map: one CGS call
+    /// serves every display of a pass.
+    static func currentSpace(for screen: NSScreen, in spaces: [String: NativeSpaceID]) -> NativeSpaceID? {
         guard !spaces.isEmpty else { return nil }
 
         let displayID = DisplayManager.displayID(of: screen)

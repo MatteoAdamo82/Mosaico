@@ -5,6 +5,40 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-09-11
+
+### Changed
+
+- Tiling trees now belong to native Spaces, not to displays. macOS moves
+  whole Spaces between monitors when one is plugged or unplugged, and
+  display IDs are not stable across reconnections: the old per-display
+  model detached the vanished display's trees and, ten seconds later,
+  dumped every window of every Space it held into the primary's visible
+  layout — nine windows squeezed into one tree, most of them not even on
+  that Space. Trees now follow their Space wherever it is shown; nothing
+  is merged, detached or restored anymore
+- Windows added without a focus anchor (bulk adoption, migrations) split
+  the shallowest leaf instead of the last one. Appending built a comb: the
+  eighth window got a 6pt slot, apps refused it and the layout looked
+  frozen
+
+### Fixed
+
+- Freezes when connecting or disconnecting a monitor:
+  - Accessibility calls have a 0.5s messaging timeout (the default is six
+    seconds per call, and every app is busy while displays reconfigure)
+  - Display-change notifications are debounced: one pass after the burst
+    settles instead of six full sweeps during it
+  - Apps that do not answer are skipped for the pass instead of having
+    their slots freed
+  - The Electron accessibility poke is rate-limited per app — some apps
+    keep a helper window Accessibility never exposes and were poked on
+    every pass
+- Windows whose frame cannot be read are no longer adopted into the
+  visible Space by guess; they are picked up once readable. Windows whose
+  role is not readable yet are retried instead of being floated
+- Reconcile and layout passes are timed in the debug log when slow
+
 ## [0.2.9] - 2026-07-26
 
 ### Fixed

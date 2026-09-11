@@ -75,11 +75,11 @@ enum WindowDiscovery {
 
         func attempt(_ remaining: Int, delay: TimeInterval) {
             if ax.isReady {
-                var windows = ax.windows()
+                var windows = (ax.windows() ?? [])
                 if windows.isEmpty {
                     // Possibly Electron with a lazy AX tree
                     ax.pokeManualAccessibility()
-                    windows = ax.windows()
+                    windows = (ax.windows() ?? [])
                 }
                 if !windows.isEmpty || remaining <= 0 {
                     completion(windows)

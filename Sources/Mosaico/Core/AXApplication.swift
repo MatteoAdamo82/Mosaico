@@ -13,11 +13,15 @@ final class AXApplication {
         self.bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
     }
 
-    /// Current windows of the app (AXWindow role only).
-    func windows() -> [AXWindow] {
+    /// Current windows of the app (AXWindow role only), or nil when the app
+    /// did not answer (busy, just launched, past the messaging timeout).
+    /// "No windows" and "no answer" must stay distinct: acting on the
+    /// latter as if it were the former frees slots the app still owns.
+    func windows() -> [AXWindow]? {
         var value: CFTypeRef?
         let err = AXUIElementCopyAttributeValue(element, kAXWindowsAttribute as CFString, &value)
-        guard err == .success, let array = value as? [AXUIElement] else { return [] }
+        if err == .noValue { return [] }
+        guard err == .success, let array = value as? [AXUIElement] else { return nil }
         return array.compactMap { AXWindow(element: $0, pid: pid) }
     }
 

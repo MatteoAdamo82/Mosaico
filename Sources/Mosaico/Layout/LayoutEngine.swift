@@ -36,6 +36,7 @@ enum LayoutEngine {
             byPid[managed.window.pid, default: []].append((managed, target))
         }
 
+        let started = Date()
         var changed = 0
         for (pid, entries) in byPid {
             let app = AXApplication(pid: pid)
@@ -51,8 +52,11 @@ enum LayoutEngine {
 
             if hadEnhanced { app.enhancedUserInterface = true }
         }
-        if changed > 0 {
-            MosaicoLog.log("apply gen=\(generation) set=\(changed)")
+        // Duration in the log: a slow pass means an app is not answering
+        // Accessibility, which is what a "freeze" looks like from here
+        let elapsed = Date().timeIntervalSince(started)
+        if changed > 0 || elapsed > 0.25 {
+            MosaicoLog.log(String(format: "apply gen=%d set=%d (%.0fms)", generation, changed, elapsed * 1000))
         }
 
         // Floats (dialogs, fixed-size windows) stay ABOVE the tiled ones —

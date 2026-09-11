@@ -1,122 +1,101 @@
 import AppKit
 
-/// One workspace (tiling tree) for each (display, native macOS space).
+/// One workspace (tiling tree) for each native macOS space.
 ///
-/// The "spaces" are ONLY the native Mission Control ones: each space has its
-/// own tree, the windows of one space never touch the layout of the others,
-/// and the layout is applied only to the visible space.
+/// Spaces are the unit, not displays. When a monitor is plugged or
+/// unplugged macOS moves whole spaces between displays — the windows stay
+/// on their space — and display IDs are not stable across reconnections.
+/// A tree keyed by its space simply follows the space wherever it is
+/// shown: nothing has to be detached, merged or restored when the display
+/// set changes, and the layout is applied only to the spaces on screen.
+///
+/// A key is pinned to a display only when the space cannot be told apart
+/// by its ID: the ID is unknown (CGS unavailable) or the same space is
+/// shown on every display ("Displays have separate Spaces" turned off).
 final class WorkspaceManager {
 
-    /// State of a single native space: a workspace.
+    struct SpaceKey: Hashable {
+        let space: NativeSpaceID
+        let pinnedDisplay: CGDirectDisplayID?
+    }
+
     final class SpaceState {
         let workspace = Workspace()
     }
 
-    /// Per-display state: one SpaceState for each native space seen.
-    final class DisplayState {
-        let displayID: CGDirectDisplayID
-        var spaces: [NativeSpaceID: SpaceState] = [:]
-
-        init(displayID: CGDirectDisplayID) {
-            self.displayID = displayID
-        }
-    }
-
-    private(set) var displays: [CGDirectDisplayID: DisplayState] = [:]
+    private(set) var spaces: [SpaceKey: SpaceState] = [:]
 
     /// Position of a window in the model.
     struct Location {
-        let display: DisplayState
-        let space: SpaceState
+        let key: SpaceKey
         let workspace: Workspace
         let managed: ManagedWindow
     }
 
-    // MARK: - Display setup
+    // MARK: - Key resolution
 
-    /// State of temporarily absent displays (e.g. during standby):
-    /// kept so the layout is not destroyed if the display returns.
-    private var detachedDisplays: [CGDirectDisplayID: DisplayState] = [:]
-
-    func syncDisplays() {
-        var seen = Set<CGDirectDisplayID>()
-        for screen in NSScreen.screens {
-            let id = DisplayManager.displayID(of: screen)
-            seen.insert(id)
-            if displays[id] == nil {
-                // Display reappeared (wake): restore the kept state
-                displays[id] = detachedDisplays.removeValue(forKey: id) ?? DisplayState(displayID: id)
-            }
-        }
-        // Vanished displays: do NOT merge immediately — on wake they reappear
-        // within a few seconds. Move the state to "detached"; the merge onto
-        // the primary happens only if the display stays absent (see mergeStaleDetached).
-        let orphans = displays.keys.filter { !seen.contains($0) }
-        for orphanID in orphans {
-            if let orphan = displays.removeValue(forKey: orphanID) {
-                detachedDisplays[orphanID] = orphan
-            }
-        }
+    /// Key of the space currently visible on the display.
+    func key(for screen: NSScreen) -> SpaceKey {
+        let byDisplay = SpaceTracker.activeSpacesByDisplay()
+        let space = SpaceTracker.currentSpace(for: screen, in: byDisplay)
+        return key(space: space, on: screen, byDisplay: byDisplay)
     }
 
-    /// Merges onto the primary the windows of displays that stayed absent for
-    /// a long time (real unplug, not standby). To be called after a grace period.
-    func mergeStaleDetached() {
-        guard !detachedDisplays.isEmpty,
-              let primary = NSScreen.screens.first else { return }
-        let target = activeWorkspace(for: primary)
-        for (_, orphan) in detachedDisplays {
-            for (_, spaceState) in orphan.spaces {
-                for (_, managed) in spaceState.workspace.windows {
-                    target.add(managed, near: nil, leafRect: { _ in managed.window.frame })
-                }
-            }
+    /// Key for a window known to be on `space`, shown on `screen`.
+    func key(space: NativeSpaceID?, on screen: NSScreen) -> SpaceKey {
+        key(space: space, on: screen, byDisplay: SpaceTracker.activeSpacesByDisplay())
+    }
+
+    private func key(space: NativeSpaceID?, on screen: NSScreen,
+                     byDisplay: [String: NativeSpaceID]) -> SpaceKey {
+        let displayID = DisplayManager.displayID(of: screen)
+        guard let space, space != 0 else {
+            return SpaceKey(space: 0, pinnedDisplay: displayID)
         }
-        detachedDisplays.removeAll()
+        let shownOn = byDisplay.values.filter { $0 == space }.count
+        return SpaceKey(space: space, pinnedDisplay: shownOn > 1 ? displayID : nil)
     }
 
-    // MARK: - Space/workspace resolution
-
-    private func displayState(for id: CGDirectDisplayID) -> DisplayState {
-        if let state = displays[id] { return state }
-        let state = DisplayState(displayID: id)
-        displays[id] = state
-        return state
-    }
-
-    func spaceState(displayID: CGDirectDisplayID, spaceID: NativeSpaceID) -> SpaceState {
-        let display = displayState(for: displayID)
-        if let state = display.spaces[spaceID] { return state }
+    func spaceState(for key: SpaceKey) -> SpaceState {
+        if let state = spaces[key] { return state }
         let state = SpaceState()
-        display.spaces[spaceID] = state
+        spaces[key] = state
         return state
     }
 
     /// Workspace of the native space currently visible on the display.
     func activeWorkspace(for screen: NSScreen) -> Workspace {
-        let spaceID = SpaceTracker.currentSpace(for: screen) ?? 0
-        return spaceState(displayID: DisplayManager.displayID(of: screen), spaceID: spaceID).workspace
+        spaceState(for: key(for: screen)).workspace
     }
 
-    /// True if the workspace belongs to the VISIBLE space of its display.
-    func isVisible(_ workspace: Workspace) -> Bool {
-        for (displayID, display) in displays {
-            for (spaceID, spaceState) in display.spaces where spaceState.workspace === workspace {
-                guard let screen = DisplayManager.screen(withDisplayID: displayID) else { return false }
-                return SpaceTracker.currentSpace(for: screen) == spaceID
-            }
+    func key(of workspace: Workspace) -> SpaceKey? {
+        spaces.first { $0.value.workspace === workspace }?.key
+    }
+
+    /// The display currently showing the space, if any.
+    func screen(showing key: SpaceKey) -> NSScreen? {
+        let byDisplay = SpaceTracker.activeSpacesByDisplay()
+        if let pinned = key.pinnedDisplay {
+            guard let screen = DisplayManager.screen(withDisplayID: pinned) else { return nil }
+            let current = SpaceTracker.currentSpace(for: screen, in: byDisplay)
+            // The unknown-space bucket is on screen while the space stays unknown
+            let shown = key.space == 0 ? current == nil : current == key.space
+            return shown ? screen : nil
         }
-        return false
+        return NSScreen.screens.first { SpaceTracker.currentSpace(for: $0, in: byDisplay) == key.space }
+    }
+
+    /// True if the workspace belongs to a space visible on some display.
+    func isVisible(_ workspace: Workspace) -> Bool {
+        guard let key = key(of: workspace) else { return false }
+        return screen(showing: key) != nil
     }
 
     /// Searches for the window across the whole model.
     func locate(_ id: WindowID) -> Location? {
-        for (_, display) in displays {
-            for (_, spaceState) in display.spaces {
-                if let managed = spaceState.workspace.windows[id] {
-                    return Location(display: display, space: spaceState,
-                                    workspace: spaceState.workspace, managed: managed)
-                }
+        for (key, state) in spaces {
+            if let managed = state.workspace.windows[id] {
+                return Location(key: key, workspace: state.workspace, managed: managed)
             }
         }
         return nil
