@@ -61,6 +61,9 @@ final class WindowManager {
     /// hotkey windows): poking them on every pass is wasted IPC and noise.
     private var lastPoke: [pid_t: Date] = [:]
 
+    /// On-screen windows the last pass could not adopt, by reason.
+    private var lastUnadoptedReason: [WindowID: String] = [:]
+
     private func pokeIfDue(_ ax: AXApplication, name: String, count: Int) {
         let now = Date()
         if let last = lastPoke[ax.pid], now.timeIntervalSince(last) < 300 { return }
@@ -168,14 +171,26 @@ final class WindowManager {
         }
     }
 
+    /// What became of a window offered for management. `deferred` is the
+    /// only outcome worth a retry: reconciliation reports it in the log
+    /// and schedules a follow-up pass.
+    enum ManageOutcome {
+        case adopted
+        case alreadyManaged
+        case excluded
+        case ignored
+        case deferred(String)
+    }
+
     /// Inserts a window into the active workspace of the NATIVE SPACE it lives
     /// on (not the visible one): windows from other spaces do not touch
     /// the current layout.
-    private func manage(window: AXWindow, bundleID: String?) {
-        guard workspaceManager.locate(window.id) == nil else { return }
+    @discardableResult
+    private func manage(window: AXWindow, bundleID: String?) -> ManageOutcome {
+        guard workspaceManager.locate(window.id) == nil else { return .alreadyManaged }
         // Excluded at runtime: never re-adopt (even if the title has changed
         // and the persistent rule no longer matches)
-        guard runtimeExcluded[window.id] == nil else { return }
+        guard runtimeExcluded[window.id] == nil else { return .excluded }
 
         // Mouse pressed = drag likely in progress (e.g. a Finder tab
         // torn off into a new window): defer until it is released.
@@ -183,7 +198,7 @@ final class WindowManager {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 self?.manage(window: window, bundleID: bundleID)
             }
-            return
+            return .deferred("mouse pressed")
         }
 
         // A window whose frame cannot be read is not ours to place: it sits
@@ -191,24 +206,31 @@ final class WindowManager {
         // (the visible one) is how whole trees got filled with windows
         // that were never there. Reconciliation adopts it once readable.
         guard let frame = window.frameIfReadable,
-              let screen = DisplayManager.screen(containingAX: frame) else { return }
+              let screen = DisplayManager.screen(containingAX: frame) else {
+            return .deferred("frame unreadable")
+        }
 
-        // Traits unreadable (app busy): decide later rather than wrongly —
-        // an unreadable role would float a perfectly normal window
+        // Traits unreadable (Electron building its AX tree, app busy):
+        // decide later rather than wrongly — an unreadable role would float
+        // a perfectly normal window. A few quick retries, then the cycle
+        // ends and the counter resets: the next caller (reconciliation)
+        // must get a fresh chance, not a permanent refusal.
         if window.role == nil {
             let attempts = (manageRetries[window.id] ?? 0) + 1
-            manageRetries[window.id] = attempts
             if attempts <= 4 {
+                manageRetries[window.id] = attempts
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                     self?.manage(window: window, bundleID: bundleID)
                 }
+            } else {
+                manageRetries[window.id] = nil
             }
-            return
+            return .deferred("traits unreadable")
         }
         manageRetries[window.id] = nil
 
         let disposition = RulesEngine.disposition(for: window, bundleID: bundleID)
-        guard disposition != .ignore else { return }
+        guard disposition != .ignore else { return .ignored }
 
         let spaceID = SpaceTracker.space(of: window.id) ?? SpaceTracker.currentSpace(for: screen)
         let key = workspaceManager.key(space: spaceID, on: screen)
@@ -223,7 +245,7 @@ final class WindowManager {
             if workspaceManager.isVisible(workspace) {
                 window.raise()
             }
-            return
+            return .adopted
         }
 
         // macOS tabs: each tab is a separate AXWindow that shares the frame
@@ -243,7 +265,7 @@ final class WindowManager {
             MosaicoLog.log("tab twin: [\(window.id)] takes over slot of [\(twin.id)]")
             workspace.replace(oldID: twin.id, with: managed)
             refreshMenuSnapshot()
-            return
+            return .adopted
         }
 
         workspace.add(managed, near: insertionAnchor(in: workspace, excluding: window.id), leafRect: { [weak self] id in
@@ -252,6 +274,7 @@ final class WindowManager {
         MosaicoLog.log("manage [\(window.id)] '\(window.title ?? "?")' → space \(key.space) (n=\(workspace.tree.count))")
         applyLayout(workspace: workspace, screen: screen)
         refreshMenuSnapshot()
+        return .adopted
     }
 
     /// Leaf to split for a new window: the focused one, or the
@@ -435,46 +458,48 @@ final class WindowManager {
         }
     }
 
-    /// Windows whose AX handle failed a frame read once: healed or freed
-    /// only if still broken on the next pass.
-    private var pendingBrokenHandles = Set<WindowID>()
+    /// Consecutive passes on which a window's AX handle failed a frame read.
+    private var brokenPasses: [WindowID: Int] = [:]
 
     /// An AX handle can die while its window survives — typical after a
     /// display reconfiguration, when the app's accessibility connection
     /// resets. The model then holds a slot it can never place, and half the
     /// screen stays reserved forever ("stubborn ... keeps (0,0,0,0)").
-    /// Confirmed over two passes: re-resolve a fresh handle by CGWindowID,
-    /// or free the slot (the window returns via adoption when readable).
+    /// From the second pass on, re-resolve a fresh handle by CGWindowID.
+    /// Freeing the slot is another matter: an empty or incomplete AX list
+    /// is not proof the window is gone — apps answer exactly that while
+    /// reconfiguring or waking. The window server decides: free at once if
+    /// it no longer knows the window, otherwise only after a long stretch.
     private func healBrokenHandles() {
-        var stillBroken = Set<WindowID>()
+        var stillBroken: [WindowID: Int] = [:]
+        let existing = WindowDiscovery.allWindowIDs()
         for screen in NSScreen.screens {
             let workspace = workspaceManager.activeWorkspace(for: screen)
             for (id, managed) in workspace.windows where !managed.isFloating {
                 guard managed.window.frameIfReadable == nil else { continue }
-                guard pendingBrokenHandles.contains(id) else {
-                    stillBroken.insert(id)
-                    continue
-                }
-                let pid = managed.window.pid
-                // An app that does not answer at all is busy, not gone:
-                // keep waiting rather than freeing slots it still owns
-                guard let list = AXApplication(pid: pid).windows() else {
-                    stillBroken.insert(id)
-                    continue
-                }
-                if let fresh = list.first(where: { $0.id == id }) {
+                let passes = (brokenPasses[id] ?? 0) + 1
+                stillBroken[id] = passes
+                guard passes >= 2 else { continue }
+
+                if let list = AXApplication(pid: managed.window.pid).windows(),
+                   let fresh = list.first(where: { $0.id == id }) {
                     let replacement = ManagedWindow(window: fresh)
                     replacement.isFloating = managed.isFloating
                     replacement.isZoomed = managed.isZoomed
                     workspace.windows[id] = replacement
+                    stillBroken[id] = nil
                     MosaicoLog.log("healed AX handle [\(id)]")
-                } else {
-                    MosaicoLog.log("dead AX handle [\(id)] → slot freed")
+                    continue
+                }
+
+                if !existing.contains(id) || passes >= 6 {
+                    MosaicoLog.log("dead AX handle [\(id)] → slot freed (\(existing.contains(id) ? "unreadable for \(passes) passes" : "gone from window server"))")
                     remove(windowID: id)
+                    stillBroken[id] = nil
                 }
             }
         }
-        pendingBrokenHandles = stillBroken
+        brokenPasses = stillBroken
     }
 
     /// Before collapsing a dead window's slot, look for a re-emerged tab
@@ -562,17 +587,19 @@ final class WindowManager {
         // change must always run the full pass.
         let snapshot = WindowDiscovery.snapshot()
         if !force, snapshot == lastReconcileSnapshot { return }
-        lastReconcileSnapshot = snapshot
         let started = Date()
 
         // Post-wake grace period: only re-apply the existing tree,
-        // no structural change (positions stay the saved ones)
+        // no structural change (positions stay the saved ones). The
+        // snapshot is deliberately NOT recorded: the structural work is
+        // still owed once the grace period ends, even if nothing else moves.
         if Date() < structuralReconcileSuppressedUntil {
             for screen in NSScreen.screens {
                 applyLayout(workspace: workspaceManager.activeWorkspace(for: screen), screen: screen)
             }
             return
         }
+        lastReconcileSnapshot = snapshot
 
         // 1. Remove dead, minimized and ghost windows
         pruneInvalidWindows()
@@ -609,14 +636,24 @@ final class WindowManager {
         //    actually on screen: a hidden (⌘H) or leftover window would just
         //    reserve an empty tile. Windows on other spaces are adopted when
         //    that space is visited.
-        let onScreenNow = snapshot.ids
         var unresponsive = 0
+        // On-screen windows this pass could not adopt, with the reason.
+        // Every one of them is a window sitting untiled on top of (or
+        // behind) the layout: it must be visible in the log, and it must
+        // be retried without waiting for the window server to change.
+        var pending: [WindowID: String] = [:]
         for app in WindowDiscovery.tileableApps() {
             let ax = AXApplication(pid: app.processIdentifier)
+            let name = app.localizedName ?? "?"
+            let unmanagedOwned = snapshot
+                .ids(ownedBy: app.processIdentifier)
+                .filter { workspaceManager.locate($0) == nil }
+
             guard let axWindows = ax.windows() else {
                 // No answer within the timeout: the app is busy. Leave it
                 // alone this pass — its windows keep their slots.
                 unresponsive += 1
+                for id in unmanagedOwned { pending[id] = "\(name) not answering" }
                 continue
             }
 
@@ -625,18 +662,39 @@ final class WindowManager {
                 // app's windows but Accessibility exposes none — those
                 // windows would stay untiled, full-size, on top of the
                 // layout. Poke the app; they get adopted on the next pass.
-                let unmanagedOwned = snapshot
-                    .ids(ownedBy: app.processIdentifier)
-                    .filter { workspaceManager.locate($0) == nil }
                 if !unmanagedOwned.isEmpty {
-                    pokeIfDue(ax, name: app.localizedName ?? "?", count: unmanagedOwned.count)
+                    pokeIfDue(ax, name: name, count: unmanagedOwned.count)
+                    for id in unmanagedOwned { pending[id] = "\(name) exposes no windows" }
                 }
                 continue
             }
 
-            for window in axWindows
-            where workspaceManager.locate(window.id) == nil && onScreenNow.contains(window.id) {
-                manage(window: window, bundleID: app.bundleIdentifier)
+            let listed = Set(axWindows.map(\.id))
+            for window in axWindows where unmanagedOwned.contains(window.id) {
+                if case .deferred(let why) = manage(window: window, bundleID: app.bundleIdentifier) {
+                    pending[window.id] = why
+                }
+            }
+            for id in unmanagedOwned where !listed.contains(id) && workspaceManager.locate(id) == nil {
+                pending[id] = "\(name) does not list it"
+            }
+        }
+
+        // Report each stuck window once per reason; a window that is NEW
+        // to the list earns one quick follow-up pass (a busy app or a tree
+        // still being built usually answers a second later). A window stuck
+        // for the same reason as before does not: some apps keep a helper
+        // window Accessibility never exposes, and chasing it forever is the
+        // idle-CPU bug all over again.
+        for (id, why) in pending where lastUnadoptedReason[id] != why {
+            MosaicoLog.log("unadopted [\(id)]: \(why)")
+        }
+        let newlyPending = Set(pending.keys).subtracting(lastUnadoptedReason.keys)
+        lastUnadoptedReason = pending
+        if !newlyPending.isEmpty {
+            lastReconcileSnapshot = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.reconcile()
             }
         }
 

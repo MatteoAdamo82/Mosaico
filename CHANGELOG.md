@@ -5,6 +5,27 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-09-11
+
+### Fixed
+
+- Regression in 0.3.0: a window whose traits were unreadable at creation
+  (Electron apps building their accessibility tree) was retried four times
+  and then refused forever — every later adoption attempt bailed out on
+  the exhausted counter. Ollama sat untiled behind a full-screen Claude
+  window for hours. The retry cycle now resets, and every later caller
+  gets a fresh chance
+- The post-wake grace pass recorded the window-server snapshot without
+  doing the structural work, so once the grace period ended nothing
+  triggered adoption until some window moved
+- Slots were freed on the strength of an empty accessibility window list.
+  Apps answer exactly that while waking or reconfiguring displays; the
+  window server now decides — a slot is freed at once if the window is
+  gone, otherwise only after half a minute of unreadable handles
+- Every on-screen window a pass could not adopt is now reported in the
+  debug log with its reason, and a window that is new to that list earns
+  one quick follow-up pass
+
 ## [0.3.0] - 2026-09-11
 
 ### Changed
