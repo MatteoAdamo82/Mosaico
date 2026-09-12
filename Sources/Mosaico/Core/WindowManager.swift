@@ -612,22 +612,40 @@ final class WindowManager {
         //    is CONFIRMED over two consecutive passes: right after wake /
         //    display-sleep the window server reports unstable spaces, and acting
         //    on the first hit would rebuild the trees, losing the positions.
+        let shownSpaces = Set(SpaceTracker.activeSpacesByDisplay().values)
         var currentDiffs = Set<WindowID>()
-        var relocations: [(WindowID, AXWindow, String?)] = []
+        var relocations: [(WindowID, AXWindow, String?, String)] = []
         for (key, spaceState) in workspaceManager.spaces {
             for (id, managed) in spaceState.workspace.windows {
                 guard let actualSpace = SpaceTracker.space(of: id),
                       actualSpace != 0, actualSpace != key.space else { continue }
                 currentDiffs.insert(id)
-                if pendingRelocations.contains(id) {   // confirmed: 2nd pass
+                // On screen right now, on a space that is really being
+                // shown: the window server is stating a fact, not glitching
+                // — the user just carried the window here (drag to the
+                // screen edge, Mission Control). Waiting for a confirmation
+                // pass left it untiled on top of the layout, because nothing
+                // else changed to trigger that pass. Off-screen moves keep
+                // the two-pass confirmation (wake / display-sleep glitches).
+                let onScreenHere = snapshot.ids.contains(id) && shownSpaces.contains(actualSpace)
+                if onScreenHere || pendingRelocations.contains(id) {
                     let bundleID = NSRunningApplication(processIdentifier: managed.window.pid)?.bundleIdentifier
-                    relocations.append((id, managed.window, bundleID))
+                    relocations.append((id, managed.window, bundleID, onScreenHere ? "on screen" : "confirmed"))
                 }
             }
         }
-        pendingRelocations = currentDiffs.subtracting(relocations.map(\.0))
-        for (id, window, bundleID) in relocations {
-            MosaicoLog.log("relocate [\(id)] to new space (confirmed)")
+        let unconfirmed = currentDiffs.subtracting(relocations.map(\.0))
+        // An unconfirmed move must get its confirmation pass even if the
+        // window server stays quiet afterwards (bounded: only when new)
+        if !unconfirmed.subtracting(pendingRelocations).isEmpty {
+            lastReconcileSnapshot = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.reconcile()
+            }
+        }
+        pendingRelocations = unconfirmed
+        for (id, window, bundleID, why) in relocations {
+            MosaicoLog.log("relocate [\(id)] to new space (\(why))")
             remove(windowID: id)
             manage(window: window, bundleID: bundleID)
         }
@@ -1225,20 +1243,21 @@ final class WindowManager {
               !source.isFloating else { return }
 
         guard let resolution = resolveDrop(source: source, at: point) else {
-            // No target window under the drop point. If the drop landed on
-            // ANOTHER display, migrate there (appended to its tree): users
-            // expect dragging to an empty area of the other monitor to move
-            // the window, not to snap it back.
+            // No target window under the drop point. If the drop landed in
+            // ANOTHER workspace — another display, or another space that
+            // the drag itself carried the window to (screen-edge switch) —
+            // migrate there, appended to its tree: users expect the drop to
+            // move the window, not to snap it back.
             if let dropScreen = DisplayManager.screen(containingAX: point),
-               let sourceScreen = workspaceManager.screen(showing: sourceLoc.key),
-               dropScreen != sourceScreen {
-                let destination = workspaceManager.activeWorkspace(for: dropScreen)
+               case let destination = workspaceManager.activeWorkspace(for: dropScreen),
+               destination !== sourceLoc.workspace {
                 sourceLoc.workspace.remove(source.id)
                 applyLayoutIfVisible(sourceLoc.workspace)
                 destination.add(source, near: nil, leafRect: { [weak self] id in
                     self?.frameOfLeaf(id, in: destination)
                 })
-                MosaicoLog.log("drop [\(source.id)] migrated to display \(DisplayManager.displayID(of: dropScreen))")
+                let space = workspaceManager.key(of: destination)?.space ?? 0
+                MosaicoLog.log("drop [\(source.id)] migrated to space \(space) on display \(DisplayManager.displayID(of: dropScreen))")
                 applyLayout(workspace: destination, screen: dropScreen)
                 refreshMenuSnapshot()
                 return

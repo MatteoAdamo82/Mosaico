@@ -5,6 +5,22 @@ All notable changes to Mosaico are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-09-12
+
+### Fixed
+
+- A window carried to another Space by the drag itself (holding it at the
+  screen edge until macOS switches Space, or via Mission Control) stayed
+  untiled on top of that Space's layout until a manual re-tile. The move
+  needed a confirmation pass, and that pass never came: nothing else had
+  changed, so reconciliation skipped it. A window that is on screen on the
+  Space being shown is now relocated at once — the window server is
+  stating a fact, not glitching — while off-screen moves keep the
+  two-pass confirmation and now force their confirmation pass
+- Dropping a window on an empty area of another Space (after a
+  screen-edge Space switch) migrates it there, as it already did for
+  another display
+
 ## [0.3.1] - 2026-09-11
 
 ### Fixed
